@@ -3702,10 +3702,21 @@ ul, ol {
     }
 
     /* IMAGE REFERENCE 01: Expected Delivery Date & Time Modal */
+    .modal-sheet.modal-dialog-card.exp-modal-sheet {
+      width: min(90vw, 356px);
+      max-width: 356px;
+      max-height: 86vh;
+      max-height: 86dvh;
+      padding: 16px 15px 18px;
+      border-radius: 22px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
     .exp-modal-root {
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 11px;
     }
 
     .exp-modal-header {
@@ -3908,9 +3919,9 @@ ul, ol {
       right: 4px;
       top: 50%;
       transform: translateY(-50%);
-      height: 40px;
+      height: 36px;
       background: #eaf1ff;
-      border-radius: 12px;
+      border-radius: 11px;
       pointer-events: none;
       z-index: 1;
     }
@@ -3929,39 +3940,74 @@ ul, ol {
     .exp-wheel-col {
       position: relative;
       z-index: 3;
+      height: 170px;
+      overflow-y: auto;
+      scroll-snap-type: y mandatory;
+      overscroll-behavior-y: contain;
+      touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2px;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: grab;
+    }
+
+    .exp-wheel-col::-webkit-scrollbar {
+      display: none;
+    }
+
+    .exp-wheel-col.is-dragging {
+      cursor: grabbing;
+      scroll-snap-type: none;
+    }
+
+    .exp-wheel-spacer {
+      width: 100%;
+      height: 68px;
+      flex: 0 0 68px;
+      pointer-events: none;
     }
 
     .exp-wheel-item {
       width: 100%;
-      height: 32px;
+      height: 34px;
+      flex: 0 0 34px;
+      scroll-snap-align: center;
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: 0.85rem;
       font-weight: 600;
-      color: #64748b;
-      transition: all 120ms ease;
+      color: #94a3b8;
+      opacity: 0.65;
+      transition: color 100ms ease, font-size 100ms ease, opacity 100ms ease;
+      background: transparent;
+      border: none;
+      padding: 0;
     }
 
     .exp-wheel-item.offset-2 {
-      font-size: 0.88rem;
+      font-size: 0.85rem;
       color: #94a3b8;
       opacity: 0.72;
     }
 
     .exp-wheel-item.offset-1 {
-      font-size: 1.05rem;
+      font-size: 1.02rem;
+      font-weight: 600;
       color: #475569;
+      opacity: 0.92;
     }
 
     .exp-wheel-item.selected {
-      height: 40px;
-      font-size: 1.45rem;
+      font-size: 1.38rem;
       font-weight: 800;
       color: #0f172a;
+      opacity: 1;
     }
 
     .exp-ampm-toggle {
@@ -4063,11 +4109,11 @@ ul, ol {
     .exp-confirm-btn,
     .usp-v2-confirm-btn {
       width: 100%;
-      height: 46px;
+      height: 42px;
       border-radius: 9999px;
       background: linear-gradient(135deg, #1d6bf3 0%, #0b57d0 100%);
       color: #ffffff;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       font-weight: 800;
       box-shadow: 0 6px 16px rgba(11, 101, 248, 0.25);
     }
@@ -4075,12 +4121,12 @@ ul, ol {
     .exp-cancel-btn,
     .usp-v2-cancel-btn {
       width: 100%;
-      height: 44px;
+      height: 40px;
       border-radius: 9999px;
       background: #ffffff;
       border: 1.5px solid #cbd5e1;
       color: #0f172a;
-      font-size: 0.92rem;
+      font-size: 0.89rem;
       font-weight: 800;
     }
 
@@ -4569,51 +4615,6 @@ ul, ol {
   cursor: pointer;
   flex-shrink: 0;
   transition: transform 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
-}
-
-/* Subtle Owner Onboarding Card on Login Screen (OWNER role only) */
-.owner-onboarding-card {
-  margin-top: 8px;
-  margin-bottom: 6px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: #F4F8FF;
-  border: 1px solid #D8E6FB;
-  text-align: center;
-}
-
-.owner-onboarding-title {
-  font-size: 0.74rem;
-  font-weight: 800;
-  color: #102653;
-  line-height: 1.3;
-}
-
-.owner-onboarding-desc {
-  font-size: 0.68rem;
-  color: #71809E;
-  line-height: 1.35;
-  margin: 3px 0 7px;
-}
-
-.owner-onboarding-cta {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid #1769EE;
-  background: #FFFFFF;
-  color: #1769EE;
-  font-size: 0.71rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.owner-onboarding-cta:hover {
-  background: #1769EE;
-  color: #FFFFFF;
 }
 
 /* Staff Management Card Non-Overlap Responsive Layout */
@@ -7931,6 +7932,23 @@ const TenantDataService = {
       freshData.tenant.nextInvoiceSeq = Number(s.next_sequence) || 1;
     }
 
+    // Load strictly owner-scoped Branding & Payment assets (Logo, Signature, QR) from private garage-assets bucket + local cache
+    try {
+      const hydratedAssets = await this.loadGarageAssets(garageId);
+      if (hydratedAssets.logoDataUrl) {
+        freshData.invoiceSettings.logoDataUrl = hydratedAssets.logoDataUrl;
+        freshData.businessProfile.logoDataUrl = hydratedAssets.logoDataUrl;
+      }
+      if (hydratedAssets.signatureDataUrl) {
+        freshData.invoiceSettings.signatureDataUrl = hydratedAssets.signatureDataUrl;
+      }
+      if (hydratedAssets.qrCodeDataUrl) {
+        freshData.invoiceSettings.qrCodeDataUrl = hydratedAssets.qrCodeDataUrl;
+        freshData.invoiceSettings.qrVerified = true;
+        freshData.invoiceSettings.qrStatusText = 'QR code verified and ready for invoices.';
+      }
+    } catch (assetErr) {}
+
     if (notifSetRes && notifSetRes.data) {
       const n = notifSetRes.data;
       freshData.notificationSettings = {
@@ -8569,6 +8587,52 @@ const TenantDataService = {
     }
   },
 
+  async syncInvoiceUpdate(invoice) {
+    if (!this.isLiveTenantSession() || !invoice || !invoice.dbId) return;
+    const client = this.getClient();
+    const garageId = AppState.user.garageId;
+    const subtotal = (invoice.items || []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+    const discount = Number(invoice.discount) || 0;
+    const total = Math.max(0, subtotal - discount);
+    const paid = (invoice.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    const payStatus = paid >= total && total > 0 ? 'Paid' : paid > 0 ? 'Partially Paid' : 'Unpaid';
+    try {
+      await client
+        .from('invoices')
+        .update({
+          subtotal,
+          discount_amount: discount,
+          total_amount: total,
+          paid_amount: paid,
+          payment_status: payStatus
+        })
+        .eq('id', invoice.dbId)
+        .eq('garage_id', garageId);
+
+      // Replace only invoice_items for this existing invoice; never touch invoice_payments
+      await client
+        .from('invoice_items')
+        .delete()
+        .eq('invoice_id', invoice.dbId)
+        .eq('garage_id', garageId);
+
+      const itemRows = (invoice.items || []).map((it, idx) => ({
+        garage_id: garageId,
+        invoice_id: invoice.dbId,
+        sort_order: idx,
+        description: it.description,
+        quantity: Number(it.qty) || 1,
+        unit_rate: Number(it.rate) || 0,
+        line_total: Number(it.amount) || 0
+      }));
+      if (itemRows.length > 0) {
+        await client.from('invoice_items').insert(itemRows);
+      }
+    } catch (e) {
+      showToast('Warning: Could not sync updated invoice to Supabase.', 'warning');
+    }
+  },
+
   async syncPayment(invoice, payment) {
     if (!this.isLiveTenantSession() || !invoice || !invoice.dbId || !payment) return;
     const client = this.getClient();
@@ -8613,8 +8677,131 @@ const TenantDataService = {
     } catch (e) {}
   },
 
-  async syncInvoiceSettings(cfg) {
-    if (!this.isLiveTenantSession() || !cfg) return;
+  getAssetCacheKey(garageId) {
+    const gid = String(garageId || (AppState.user && AppState.user.garageId) || (AppState.data && AppState.data.tenant && AppState.data.tenant.id) || '').trim();
+    return gid ? `garageflow_owner_assets_${gid}` : '';
+  },
+
+  readOwnerAssetCache(garageId) {
+    const key = this.getAssetCacheKey(garageId);
+    if (!key) return {};
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) {
+      return {};
+    }
+  },
+
+  writeOwnerAssetCache(garageId, partial) {
+    const key = this.getAssetCacheKey(garageId);
+    if (!key) return;
+    try {
+      const current = this.readOwnerAssetCache(garageId);
+      const next = { ...current, ...partial };
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch (e) {}
+  },
+
+  async dataUrlToBlob(dataUrl) {
+    const parts = String(dataUrl || '').split(',');
+    if (parts.length < 2) return null;
+    const mimeMatch = parts[0].match(/data:([^;]+);base64/i);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+    const bin = atob(parts[1]);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  },
+
+  async blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  },
+
+  async syncGarageAsset(assetKind, dataUrl) {
+    const garageId = (AppState.user && AppState.user.garageId) || (AppState.data && AppState.data.tenant && AppState.data.tenant.id) || '';
+    if (!garageId) return;
+    const fieldMap = { logo: 'logoDataUrl', signature: 'signatureDataUrl', qr: 'qrCodeDataUrl' };
+    const cacheField = fieldMap[assetKind];
+    if (cacheField) {
+      this.writeOwnerAssetCache(garageId, { [cacheField]: dataUrl || null });
+    }
+    if (!this.isLiveTenantSession()) return;
+    const client = this.getClient();
+    const storagePath = `${garageId}/${assetKind}.png`;
+    try {
+      if (dataUrl) {
+        const blob = await this.dataUrlToBlob(dataUrl);
+        if (blob) {
+          await client.storage.from('garage-assets').upload(storagePath, blob, {
+            upsert: true,
+            contentType: blob.type || 'image/png'
+          });
+          if (assetKind === 'logo') {
+            await client.from('garages').update({ logo_storage_path: storagePath }).eq('id', garageId);
+          }
+        }
+      } else {
+        await client.storage.from('garage-assets').remove([storagePath]);
+        if (assetKind === 'logo') {
+          await client.from('garages').update({ logo_storage_path: null }).eq('id', garageId);
+        }
+      }
+    } catch (e) {}
+  },
+
+  async loadGarageAssets(garageId) {
+    const result = {
+      logoDataUrl: null,
+      signatureDataUrl: null,
+      qrCodeDataUrl: null
+    };
+    const cached = this.readOwnerAssetCache(garageId);
+    if (cached.logoDataUrl) result.logoDataUrl = cached.logoDataUrl;
+    if (cached.signatureDataUrl) result.signatureDataUrl = cached.signatureDataUrl;
+    if (cached.qrCodeDataUrl) result.qrCodeDataUrl = cached.qrCodeDataUrl;
+
+    if (!this.isLiveTenantSession() || !garageId) return result;
+    const client = this.getClient();
+    const kinds = [
+      { kind: 'logo', key: 'logoDataUrl' },
+      { kind: 'signature', key: 'signatureDataUrl' },
+      { kind: 'qr', key: 'qrCodeDataUrl' }
+    ];
+    await Promise.all(
+      kinds.map(async ({ kind, key }) => {
+        try {
+          const { data, error } = await client.storage.from('garage-assets').download(`${garageId}/${kind}.png`);
+          if (!error && data) {
+            const dUrl = await this.blobToDataUrl(data);
+            if (dUrl) result[key] = dUrl;
+          }
+        } catch (e) {}
+      })
+    );
+    this.writeOwnerAssetCache(garageId, result);
+    return result;
+  },
+
+  async syncInvoiceSettings(cfg, changedPayload = null) {
+    if (!cfg) return;
+    if (changedPayload) {
+      if (Object.prototype.hasOwnProperty.call(changedPayload, 'logoDataUrl')) {
+        this.syncGarageAsset('logo', changedPayload.logoDataUrl);
+      }
+      if (Object.prototype.hasOwnProperty.call(changedPayload, 'signatureDataUrl')) {
+        this.syncGarageAsset('signature', changedPayload.signatureDataUrl);
+      }
+      if (Object.prototype.hasOwnProperty.call(changedPayload, 'qrCodeDataUrl')) {
+        this.syncGarageAsset('qr', changedPayload.qrCodeDataUrl);
+      }
+    }
+    if (!this.isLiveTenantSession()) return;
     const client = this.getClient();
     try {
       await client.from('invoice_settings').update({
@@ -10027,7 +10214,18 @@ const AppState = {
       : payload.staffId
       ? [payload.staffId]
       : [];
-    const matchedStaffList = this.data.staff.filter((s) => staffIds.includes(s.id));
+    const matchedStaffList = [];
+    for (const sid of staffIds) {
+      const member = this.data.staff.find((s) => s.id === sid);
+      if (!member || !isStaffAccountEligibleForAssignment(member)) {
+        const label = member ? `${member.name} (${member.status || 'Inactive'})` : 'selected staff member';
+        return {
+          ok: false,
+          error: `Cannot assign service visit to ${label}. Only staff members with Active account status can be assigned.`
+        };
+      }
+      matchedStaffList.push(member);
+    }
     const primaryStaff = matchedStaffList[0] || null;
     const assignedNames = matchedStaffList.map((s) => s.name).join(', ');
     const visitDateStr =
@@ -10201,11 +10399,61 @@ const AppState = {
       return { ok: false, error: 'Please add at least one valid service item with positive quantity and rate.' };
     }
 
-    const subtotal = cleanItems.reduce((sum, i) => sum + i.amount, 0);
-    const discount = Math.max(0, Number(payload.discount) || 0);
-    const grandTotal = Math.max(0, subtotal - discount);
-    const receivedAmount = Math.max(0, Number(payload.amountReceived) || 0);
+    // Strict One-Service-Entry = One-Invoice duplicate protection
+    const requestedJobId = String(payload.jobId || '').trim();
+    if (requestedJobId) {
+      const linkedJobObj = this.getJobById(requestedJobId);
+      const existingJobInv = this.getInvoiceByJobId(requestedJobId, linkedJobObj && linkedJobObj.invoiceId);
+      if (existingJobInv) {
+        return {
+          ok: false,
+          error: `Invoice ${existingJobInv.id} already exists for ${requestedJobId}. Please use Edit Bill to modify the existing invoice.`
+        };
+      }
+    }
 
+    const subtotal = cleanItems.reduce((sum, i) => sum + i.amount, 0);
+    const rawDiscount =
+      payload.discount === undefined || payload.discount === null ? '' : String(payload.discount).trim();
+    const parsedDiscount = rawDiscount === '' ? 0 : Number(rawDiscount);
+    if (isNaN(parsedDiscount) || !isFinite(parsedDiscount) || parsedDiscount < 0) {
+      return {
+        ok: false,
+        error: 'Discount must be a valid non-negative amount.'
+      };
+    }
+    if (parsedDiscount > subtotal) {
+      return {
+        ok: false,
+        error: 'Discount cannot exceed the bill subtotal.'
+      };
+    }
+    const discount = parsedDiscount;
+    const grandTotal = Math.max(0, subtotal - discount);
+
+    const rawReceived =
+      payload.amountReceived === undefined || payload.amountReceived === null
+        ? ''
+        : String(payload.amountReceived).trim();
+    if (rawReceived === '') {
+      return {
+        ok: false,
+        error: 'Please enter the amount received before generating the bill.'
+      };
+    }
+    const receivedAmount = Number(rawReceived);
+    if (isNaN(receivedAmount) || !isFinite(receivedAmount)) {
+      return {
+        ok: false,
+        error: 'Please enter a valid numeric amount received.'
+      };
+    }
+    if (receivedAmount <= 0) {
+      return {
+        ok: false,
+        error: 'Please enter an amount received greater than ₹0 before generating the bill.'
+      };
+    }
     if (receivedAmount > grandTotal) {
       return {
         ok: false,
@@ -10289,6 +10537,103 @@ const AppState = {
   },
 
   /**
+   * Finds an existing invoice linked to a specific service job ID (canonical jobId / invoiceId relationship).
+   */
+  getInvoiceByJobId(jobId, explicitInvoiceId = '') {
+    const cleanJobId = String(jobId || '').trim().toLowerCase();
+    const cleanInvId = String(explicitInvoiceId || '').trim().toLowerCase();
+    if (!cleanJobId && !cleanInvId) return null;
+    return (
+      (this.data.invoices || []).find((inv) => {
+        const invJob = String(inv.jobId || '').trim().toLowerCase();
+        const invId = String(inv.id || '').trim().toLowerCase();
+        if (cleanJobId && invJob && invJob === cleanJobId) return true;
+        if (cleanInvId && invId && invId === cleanInvId) return true;
+        return false;
+      }) || null
+    );
+  },
+
+  /**
+   * Updates an existing invoice in place while strictly preserving invoice ID/number,
+   * customer/vehicle/job relationships, and all existing payment history records.
+   */
+  updateExistingBill(invoiceId, payload) {
+    if (this.user && this.user.role === 'staff') {
+      return {
+        ok: false,
+        error: 'Access denied: Staff accounts are not permitted to edit customer invoices.'
+      };
+    }
+    const invoice = this.getInvoiceById(invoiceId);
+    if (!invoice) {
+      return { ok: false, error: 'Existing invoice not found.' };
+    }
+
+    const cleanItems = (payload.items || [])
+      .map((item) => {
+        const qty = Number(item.qty) || 0;
+        const rate = Number(item.rate) || 0;
+        return {
+          description: String(item.description || '').trim(),
+          qty,
+          rate,
+          amount: Math.round(qty * rate)
+        };
+      })
+      .filter((item) => item.description && item.qty > 0 && item.rate >= 0);
+
+    if (cleanItems.length === 0) {
+      return { ok: false, error: 'Please keep at least one valid service item with positive quantity and rate.' };
+    }
+
+    const subtotal = cleanItems.reduce((sum, i) => sum + i.amount, 0);
+    const rawDiscount =
+      payload.discount === undefined || payload.discount === null ? '' : String(payload.discount).trim();
+    const parsedDiscount = rawDiscount === '' ? 0 : Number(rawDiscount);
+    if (isNaN(parsedDiscount) || !isFinite(parsedDiscount) || parsedDiscount < 0) {
+      return { ok: false, error: 'Discount must be a valid non-negative amount.' };
+    }
+    if (parsedDiscount > subtotal) {
+      return { ok: false, error: 'Discount cannot exceed the bill subtotal.' };
+    }
+    const discount = parsedDiscount;
+    const grandTotal = Math.max(0, subtotal - discount);
+
+    // Protect financial integrity: revised bill total cannot be lower than already-received payments
+    const alreadyPaid = (invoice.payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    if (grandTotal < alreadyPaid) {
+      return {
+        ok: false,
+        error: `Revised bill total (${formatCurrency(grandTotal)}) cannot be lower than the amount already received (${formatCurrency(alreadyPaid)}).`
+      };
+    }
+
+    // Update existing invoice in-place (never change id, dbId, customerId, jobId, or payments)
+    invoice.items = cleanItems;
+    invoice.discount = discount;
+    if (payload.date && String(payload.date).trim()) {
+      invoice.date = String(payload.date).trim();
+    }
+
+    // Sync updated amount on linked customer serviceHistory entry without creating duplicate visits
+    const customer = this.getCustomerById(invoice.customerId);
+    if (customer && invoice.jobId) {
+      const visit = (customer.serviceHistory || []).find(
+        (v) => v.jobId === invoice.jobId || v.invoiceId === invoice.id
+      );
+      if (visit) {
+        visit.amount = grandTotal;
+        visit.invoiceId = invoice.id;
+      }
+    }
+
+    this.notify();
+    TenantDataService.syncInvoiceUpdate(invoice);
+    return { ok: true, invoice };
+  },
+
+  /**
    * Records a subsequent payment against an existing invoice
    */
   recordPayment(invoiceId, paymentPayload) {
@@ -10346,6 +10691,7 @@ const AppState = {
     };
     if (payload.logoDataUrl !== undefined && this.data.invoiceSettings) {
       this.data.invoiceSettings.logoDataUrl = payload.logoDataUrl;
+      TenantDataService.syncGarageAsset('logo', payload.logoDataUrl);
     }
     this.notify();
     TenantDataService.syncBusinessProfile(this.data.businessProfile);
@@ -10366,7 +10712,7 @@ const AppState = {
       this.data.tenant.nextInvoiceSeq = nextSeq;
     }
     this.notify();
-    TenantDataService.syncInvoiceSettings(this.data.invoiceSettings);
+    TenantDataService.syncInvoiceSettings(this.data.invoiceSettings, payload);
     return this.data.invoiceSettings;
   },
 
@@ -10680,6 +11026,15 @@ function renderTopHeader({ eyebrow, greeting, title, subtitle, isDashboardHeader
  * Common Reusable Selection Popup (Requirement 12 & 1000203889.jpg)
  * Used for Customer, Vehicle, Staff (multi/single), and Payment Method (no search bar).
  */
+function isStaffAccountEligibleForAssignment(staffMember) {
+  if (!staffMember) return false;
+  const rawStatus = String(staffMember.account_status || staffMember.status || '').trim().toLowerCase();
+  const rawAccess = String(staffMember.accessStatus || '').trim().toLowerCase();
+  if (rawStatus !== 'active') return false;
+  if (rawAccess && rawAccess !== 'active') return false;
+  return true;
+}
+
 const SelectionPopup = {
   open({
     title = 'Select Option',
@@ -10689,6 +11044,7 @@ const SelectionPopup = {
     searchable = true,
     searchPlaceholder = 'Search by name, number or keyword...',
     allowClear = false,
+    emptyMessage = '',
     onConfirm
   }) {
     let currentSelected = Array.isArray(selectedValues)
@@ -10764,7 +11120,8 @@ const SelectionPopup = {
             : items;
 
           if (filtered.length === 0) {
-            listEl.innerHTML = `<div style="padding:20px 12px; text-align:center; font-size:13px; color:var(--color-muted);">No matching options found.</div>`;
+            const msg = items.length === 0 && emptyMessage ? emptyMessage : 'No matching options found.';
+            listEl.innerHTML = `<div style="padding:20px 12px; text-align:center; font-size:13px; color:var(--color-muted);">${escapeHtml(msg)}</div>`;
             return;
           }
 
@@ -11081,6 +11438,12 @@ function openExpectedDeliveryModal(currentValue, onConfirmDelivery) {
     hideHeader: true,
     bodyHtml: `<div id="exp-delivery-modal-root" class="exp-modal-root"></div>`,
     onMount(modalEl) {
+      const sheetEl = modalEl.classList.contains('modal-sheet')
+        ? modalEl
+        : modalEl.querySelector('.modal-sheet');
+      if (sheetEl) {
+        sheetEl.classList.add('exp-modal-sheet');
+      }
       const rootEl = modalEl.querySelector('#exp-delivery-modal-root');
 
       function formatTimeStr() {
@@ -11104,25 +11467,34 @@ function openExpectedDeliveryModal(currentValue, onConfirmDelivery) {
         return `${meta.weekday3}, ${meta.day} ${monthsShort[meta.month]} ${meta.year}, ${tStr}`;
       }
 
-      function getWheelWindow(arr, currentVal) {
-        const len = arr.length;
-        let idx = arr.indexOf(currentVal);
-        if (idx === -1) idx = 0;
-        return [-2, -1, 0, 1, 2].map((offset) => {
-          const wrappedIdx = (idx + offset + len) % len;
-          return {
-            value: arr[wrappedIdx],
-            offset
-          };
-        });
+      const WHEEL_ITEM_H = 34;
+      const WHEEL_COPIES = 5;
+
+      function buildCircularWheelItems(arr, dataAttrName) {
+        let out = '<div class="exp-wheel-spacer" aria-hidden="true"></div>';
+        for (let copy = 0; copy < WHEEL_COPIES; copy++) {
+          for (let i = 0; i < arr.length; i++) {
+            const val = arr[i];
+            out += `<button type="button" class="exp-wheel-item" ${dataAttrName}="${val}" data-wheel-idx="${copy * arr.length + i}">${String(val).padStart(2, '0')}</button>`;
+          }
+        }
+        out += '<div class="exp-wheel-spacer" aria-hidden="true"></div>';
+        return out;
+      }
+
+      function updateLiveSummaryTime() {
+        const timeEl = rootEl.querySelector('#exp-summary-time-text');
+        if (timeEl) {
+          timeEl.textContent = formatTimeStr();
+        }
       }
 
       function renderModalContent() {
         if (!baseDates.includes(selectedDateIso)) {
           baseDates[3] = selectedDateIso;
         }
-        const hourRows = getWheelWindow(hoursList, selectedHour);
-        const minuteRows = getWheelWindow(minutesList, selectedMinute);
+        const hourWheelHtml = buildCircularWheelItems(hoursList, 'data-exp-hour');
+        const minuteWheelHtml = buildCircularWheelItems(minutesList, 'data-exp-minute');
 
         rootEl.innerHTML = `
           <!-- Top Header matching Image Reference 01 -->
@@ -11232,38 +11604,14 @@ function openExpectedDeliveryModal(currentValue, onConfirmDelivery) {
                   <div class="exp-wheel-highlight-band"></div>
                   <div class="exp-wheel-center-divider"></div>
 
-                  <!-- Hour Column -->
-                  <div class="exp-wheel-col" id="exp-hour-wheel">
-                    ${hourRows
-                      .map(
-                        (r) => `
-                      <button
-                        type="button"
-                        class="exp-wheel-item offset-${Math.abs(r.offset)} ${r.offset === 0 ? 'selected' : ''}"
-                        data-exp-hour="${r.value}"
-                      >
-                        ${String(r.value).padStart(2, '0')}
-                      </button>
-                    `
-                      )
-                      .join('')}
+                  <!-- Hour Column (Real Scrollable Wheel) -->
+                  <div class="exp-wheel-col" id="exp-hour-wheel" role="listbox" aria-label="Select Hour">
+                    ${hourWheelHtml}
                   </div>
 
-                  <!-- Minute Column -->
-                  <div class="exp-wheel-col" id="exp-minute-wheel">
-                    ${minuteRows
-                      .map(
-                        (r) => `
-                      <button
-                        type="button"
-                        class="exp-wheel-item offset-${Math.abs(r.offset)} ${r.offset === 0 ? 'selected' : ''}"
-                        data-exp-minute="${r.value}"
-                      >
-                        ${String(r.value).padStart(2, '0')}
-                      </button>
-                    `
-                      )
-                      .join('')}
+                  <!-- Minute Column (Real Scrollable Wheel) -->
+                  <div class="exp-wheel-col" id="exp-minute-wheel" role="listbox" aria-label="Select Minute">
+                    ${minuteWheelHtml}
                   </div>
                 </div>
               </div>
@@ -11373,49 +11721,160 @@ function openExpectedDeliveryModal(currentValue, onConfirmDelivery) {
           });
         });
 
-        // Bind Hour items
-        rootEl.querySelectorAll('[data-exp-hour]').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            selectedHour = Number(btn.getAttribute('data-exp-hour'));
-            renderModalContent();
-          });
-        });
+        function setupScrollWheel(colEl, list, dataAttr, getCurrentVal, onValueChange) {
+          if (!colEl) return;
+          const items = Array.from(colEl.querySelectorAll('.exp-wheel-item'));
+          const len = list.length;
+          const midCopyOffset = Math.floor(WHEEL_COPIES / 2) * len;
+          let settleTimer = null;
+          let rafId = null;
+          let isAdjusting = false;
+          let dragActive = false;
+          let dragMoved = false;
+          let dragStartY = 0;
+          let dragStartScroll = 0;
 
-        // Bind Minute items
-        rootEl.querySelectorAll('[data-exp-minute]').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            selectedMinute = Number(btn.getAttribute('data-exp-minute'));
-            renderModalContent();
-          });
-        });
+          function applyVisualClasses(centerIdx) {
+            for (let i = 0; i < items.length; i++) {
+              const dist = Math.abs(i - centerIdx);
+              const el = items[i];
+              el.classList.remove('selected', 'offset-1', 'offset-2');
+              if (dist === 0) {
+                el.classList.add('selected');
+                el.setAttribute('aria-selected', 'true');
+              } else {
+                el.setAttribute('aria-selected', 'false');
+                if (dist === 1) el.classList.add('offset-1');
+                else if (dist === 2) el.classList.add('offset-2');
+              }
+            }
+          }
 
-        // Mouse wheel support on Hour and Minute columns
-        const hourWheel = rootEl.querySelector('#exp-hour-wheel');
-        if (hourWheel) {
-          hourWheel.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const dir = e.deltaY > 0 ? 1 : -1;
-            const idx = hoursList.indexOf(selectedHour);
-            selectedHour = hoursList[(idx + dir + hoursList.length) % hoursList.length];
-            renderModalContent();
+          function recenterIfNeeded(centerIdx) {
+            const valueIdx = ((centerIdx % len) + len) % len;
+            const targetMidIdx = midCopyOffset + valueIdx;
+            if (centerIdx < len || centerIdx >= (WHEEL_COPIES - 1) * len) {
+              isAdjusting = true;
+              colEl.scrollTop = targetMidIdx * WHEEL_ITEM_H;
+              applyVisualClasses(targetMidIdx);
+              requestAnimationFrame(() => { isAdjusting = false; });
+              return targetMidIdx;
+            }
+            return centerIdx;
+          }
+
+          function syncFromScroll() {
+            if (isAdjusting) return;
+            const rawIdx = Math.round(colEl.scrollTop / WHEEL_ITEM_H);
+            const clampedIdx = Math.max(0, Math.min(items.length - 1, rawIdx));
+            const newVal = Number(items[clampedIdx].getAttribute(dataAttr));
+            applyVisualClasses(clampedIdx);
+            if (newVal !== getCurrentVal()) {
+              onValueChange(newVal);
+              updateLiveSummaryTime();
+            }
+            return clampedIdx;
+          }
+
+          // Initialize at middle copy matching current selected value
+          const initValIdx = Math.max(0, list.indexOf(getCurrentVal()));
+          const initIdx = midCopyOffset + initValIdx;
+          colEl.scrollTop = initIdx * WHEEL_ITEM_H;
+          applyVisualClasses(initIdx);
+
+          colEl.addEventListener('scroll', () => {
+            if (isAdjusting) return;
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => {
+              const cIdx = syncFromScroll();
+              if (cIdx !== undefined) {
+                recenterIfNeeded(cIdx);
+              }
+            });
+            if (settleTimer) clearTimeout(settleTimer);
+            settleTimer = setTimeout(() => {
+              if (dragActive) return;
+              const rawIdx = Math.round(colEl.scrollTop / WHEEL_ITEM_H);
+              const clampedIdx = Math.max(0, Math.min(items.length - 1, rawIdx));
+              const alignedTop = clampedIdx * WHEEL_ITEM_H;
+              if (Math.abs(colEl.scrollTop - alignedTop) > 1) {
+                colEl.scrollTo({ top: alignedTop, behavior: 'smooth' });
+              }
+              const settledIdx = recenterIfNeeded(clampedIdx);
+              const newVal = Number(items[settledIdx].getAttribute(dataAttr));
+              if (newVal !== getCurrentVal()) {
+                onValueChange(newVal);
+                updateLiveSummaryTime();
+              }
+            }, 95);
+          }, { passive: true });
+
+          // Click any visible item to scroll smoothly to it
+          items.forEach((btn, idx) => {
+            btn.addEventListener('click', (e) => {
+              if (dragMoved) {
+                e.preventDefault();
+                dragMoved = false;
+                return;
+              }
+              colEl.scrollTo({ top: idx * WHEEL_ITEM_H, behavior: 'smooth' });
+            });
           });
+
+          // Desktop mouse drag support (does not interfere with native touch)
+          colEl.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            dragActive = true;
+            dragMoved = false;
+            dragStartY = e.clientY;
+            dragStartScroll = colEl.scrollTop;
+            colEl.classList.add('is-dragging');
+          });
+
+          const onMouseMove = (e) => {
+            if (!dragActive) return;
+            const dy = e.clientY - dragStartY;
+            if (Math.abs(dy) > 3) dragMoved = true;
+            colEl.scrollTop = dragStartScroll - dy;
+          };
+
+          const onMouseUp = () => {
+            if (!dragActive) return;
+            dragActive = false;
+            colEl.classList.remove('is-dragging');
+            const rawIdx = Math.round(colEl.scrollTop / WHEEL_ITEM_H);
+            const clampedIdx = Math.max(0, Math.min(items.length - 1, rawIdx));
+            colEl.scrollTo({ top: clampedIdx * WHEEL_ITEM_H, behavior: 'smooth' });
+          };
+
+          window.addEventListener('mousemove', onMouseMove);
+          window.addEventListener('mouseup', onMouseUp);
         }
-        const minuteWheel = rootEl.querySelector('#exp-minute-wheel');
-        if (minuteWheel) {
-          minuteWheel.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const dir = e.deltaY > 0 ? 1 : -1;
-            const idx = minutesList.indexOf(selectedMinute);
-            selectedMinute = minutesList[(idx + dir + minutesList.length) % minutesList.length];
-            renderModalContent();
-          });
-        }
 
-        // Bind AM/PM buttons
+        setupScrollWheel(
+          rootEl.querySelector('#exp-hour-wheel'),
+          hoursList,
+          'data-exp-hour',
+          () => selectedHour,
+          (v) => { selectedHour = v; }
+        );
+
+        setupScrollWheel(
+          rootEl.querySelector('#exp-minute-wheel'),
+          minutesList,
+          'data-exp-minute',
+          () => selectedMinute,
+          (v) => { selectedMinute = v; }
+        );
+
+        // Bind AM/PM buttons (in-place update so wheels never reset scroll)
         rootEl.querySelectorAll('[data-exp-ampm]').forEach((btn) => {
           btn.addEventListener('click', () => {
             selectedAmPm = btn.getAttribute('data-exp-ampm');
-            renderModalContent();
+            rootEl.querySelectorAll('[data-exp-ampm]').forEach((b) => {
+              b.classList.toggle('active', b.getAttribute('data-exp-ampm') === selectedAmPm);
+            });
+            updateLiveSummaryTime();
           });
         });
 
@@ -12196,20 +12655,6 @@ function renderLoginPage(container) {
           ${ICONS.arrowRight}
         </button>
 
-        ${
-          selectedRole === 'admin'
-            ? `<div class="owner-onboarding-card" id="owner-onboarding-card">
-                <div class="owner-onboarding-title">Want to start your own garage on GarageFlow?</div>
-                <p class="owner-onboarding-desc">
-                  Interested in creating a garage account? Contact Superadmin to request your own garage workspace.
-                </p>
-                <button type="button" id="owner-request-garage-btn" class="owner-onboarding-cta">
-                  Request a Garage Account
-                </button>
-              </div>`
-            : ''
-        }
-
         <!-- Security Information Strip -->
         <div class="login-security-strip">
           <span class="login-security-icon">${ICONS.shieldCheck}</span>
@@ -12345,14 +12790,6 @@ function bindLoginEvents(container) {
       passwordInput.type = showPassword ? 'text' : 'password';
       toggleBtn.setAttribute('aria-label', showPassword ? 'Hide password' : 'Show password');
       toggleBtn.innerHTML = showPassword ? ICONS.eyeOff : ICONS.eye;
-    });
-  }
-
-  // Owner onboarding request entry point (reuses existing Superadmin Gmail compose mechanism; no invented address)
-  const ownerRequestBtn = container.querySelector('#owner-request-garage-btn');
-  if (ownerRequestBtn) {
-    ownerRequestBtn.addEventListener('click', () => {
-      openBlankGmailCompose('');
     });
   }
 
@@ -13529,6 +13966,12 @@ function renderCustomerProfilePage(container, params = {}) {
     AppState.getJobById(customer.currentJobId) ||
     AppState.data.jobs.find((j) => j.customerId === customer.id) ||
     null;
+  const existingCurrentJobInvoice = currentJob
+    ? AppState.getInvoiceByJobId(currentJob.id, currentJob.invoiceId)
+    : null;
+  const canShowCreateBill =
+    (!AppState.user || AppState.user.role === 'admin') &&
+    Boolean(currentJob && String(currentJob.status || '').trim() === 'Ready');
 
   container.innerHTML = `
     <div class="page-container">
@@ -13687,8 +14130,8 @@ function renderCustomerProfilePage(container, params = {}) {
           : ''
       }
 
-      <!-- Action CTA Row: New Service Visit (+ Create Bill for Admin only; hidden for Staff per Part 1.1) -->
-      <div class="profile-actions-grid" style="margin-bottom:18px; ${AppState.user && AppState.user.role === 'staff' ? 'grid-template-columns:1fr;' : ''}">
+      <!-- Action CTA Row: New Service Visit (+ Create Bill for Admin only when currentJob.status === 'Ready') -->
+      <div class="profile-actions-grid" style="margin-bottom:18px; ${!canShowCreateBill ? 'grid-template-columns:1fr;' : ''}">
         <button
           type="button"
           class="btn btn-primary"
@@ -13704,14 +14147,15 @@ function renderCustomerProfilePage(container, params = {}) {
         </button>
 
         ${
-          !AppState.user || AppState.user.role === 'admin'
+          canShowCreateBill
             ? `<button
                 type="button"
                 class="btn btn-whatsapp-soft"
                 id="profile-create-bill-btn"
+                data-existing-invoice-id="${existingCurrentJobInvoice ? escapeHtml(existingCurrentJobInvoice.id) : ''}"
               >
-                ${ICONS.fileText}
-                <span>Create Bill for Customer</span>
+                ${existingCurrentJobInvoice ? ICONS.edit : ICONS.fileText}
+                <span>${existingCurrentJobInvoice ? 'Edit Bill for Customer' : 'Create Bill for Customer'}</span>
               </button>`
             : ''
         }
@@ -13917,12 +14361,26 @@ function bindCustomerProfileEvents(container, customer, currentJob) {
     Router.navigate('new-service', { customerId: customer.id });
   });
 
-  // Create Bill for this customer (Admin only)
+  // Create or Edit Bill for this customer (Admin only; Ready services only)
   const createBillBtn = container.querySelector('#profile-create-bill-btn');
   if (createBillBtn) {
     createBillBtn.addEventListener('click', () => {
       if (AppState.user && AppState.user.role === 'staff') return;
-      Router.navigate('create-bill', { customerId: customer.id, jobId: currentJob ? currentJob.id : '' });
+      const existingInv = currentJob
+        ? AppState.getInvoiceByJobId(currentJob.id, currentJob.invoiceId)
+        : null;
+      if (existingInv) {
+        Router.navigate('create-bill', {
+          editInvoiceId: existingInv.id,
+          returnTo: 'customer-profile',
+          customerId: customer.id
+        });
+      } else {
+        Router.navigate('create-bill', {
+          customerId: customer.id,
+          jobId: currentJob ? currentJob.id : ''
+        });
+      }
     });
   }
 
@@ -13972,7 +14430,7 @@ let visitState = {
 };
 function renderNewServiceVisitPage(container, params = {}) {
   const { customers, staff } = AppState.data;
-  const activeStaffList = staff.filter((s) => s.status !== 'Inactive');
+  const activeStaffList = staff.filter((s) => isStaffAccountEligibleForAssignment(s));
 
   if (params.customerId && params.customerId !== visitState.selectedCustomerId) {
     visitState.selectedCustomerId = params.customerId;
@@ -14440,24 +14898,33 @@ function bindNewServiceVisitEvents(container, selectedCustomer) {
   if (staffPopupBtn) {
     staffPopupBtn.addEventListener('click', () => {
       syncVisitInputs(container);
+      const eligibleStaff = AppState.data.staff.filter((s) => isStaffAccountEligibleForAssignment(s));
+      const eligibleIdsSet = new Set(eligibleStaff.map((s) => s.id));
       SelectionPopup.open({
         title: 'Assign Mechanic / Staff (Optional)',
         multiple: true,
         searchable: true,
         allowClear: true,
         searchPlaceholder: 'Search by name, number or keyword...',
-        selectedValues: visitState.staffIds || [],
-        items: AppState.data.staff
-          .filter((s) => s.status !== 'Inactive')
-          .map((s) => ({
-            value: s.id,
-            label: s.name,
-            sublabel: `${s.role} • ${s.phone}`,
-            badge: s.status,
-            icon: ICONS.wrench
-          })),
+        emptyMessage: 'No active staff members available for assignment.',
+        selectedValues: (visitState.staffIds || []).filter((id) => eligibleIdsSet.has(id)),
+        items: eligibleStaff.map((s) => ({
+          value: s.id,
+          label: s.name,
+          sublabel: `${s.role} • ${s.phone}`,
+          badge: s.status,
+          icon: ICONS.wrench
+        })),
         onConfirm(chosenIds) {
-          visitState.staffIds = Array.isArray(chosenIds) ? chosenIds : [];
+          const requestedIds = Array.isArray(chosenIds) ? chosenIds : [];
+          const validIds = requestedIds.filter((id) => {
+            const member = AppState.data.staff.find((s) => s.id === id);
+            return isStaffAccountEligibleForAssignment(member);
+          });
+          if (validIds.length !== requestedIds.length) {
+            showToast('Only staff members with Active account status can be assigned.', 'error');
+          }
+          visitState.staffIds = validIds;
           visitState.staffId = visitState.staffIds[0] || '';
           renderNewServiceVisitPage(container);
         }
@@ -15881,6 +16348,7 @@ function openRecordPaymentModal(invoiceId, onSuccess) {
 
   let selectedMethod = 'Cash';
   let enteredAmount = summary.balance;
+  const todayPaymentDate = parseSelectedDateMeta(getLocalTodayIso()).formattedShort;
 
   Modal.open({
     title: 'Record Payment',
@@ -15995,7 +16463,7 @@ function openRecordPaymentModal(invoiceId, onSuccess) {
               type="text"
               id="payment-date-input"
               class="form-input with-left-icon"
-              value="01 Nov 2026"
+              value="${escapeHtml(todayPaymentDate)}"
               required
             />
           </div>
@@ -16155,7 +16623,7 @@ function openRecordPaymentModal(invoiceId, onSuccess) {
       modalEl.querySelector('#record-payment-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const amount = Number(amountInput.value);
-        const date = modalEl.querySelector('#payment-date-input').value.trim() || '01 Nov 2026';
+        const date = modalEl.querySelector('#payment-date-input').value.trim() || todayPaymentDate;
         const reference = modalEl.querySelector('#payment-ref-input').value.trim();
         const notes = modalEl.querySelector('#payment-notes-input').value.trim();
 
@@ -16205,8 +16673,49 @@ let billDraft = null;
 function createDefaultItems() {
   return [];
 }
+
+function resolveEditInvoiceDate(existingDateStr) {
+  const todayIso = getLocalTodayIso();
+  const todayShort = parseSelectedDateMeta(todayIso).formattedShort;
+  if (!existingDateStr) return todayShort;
+  const raw = String(existingDateStr).trim();
+  const monthsMap = {
+    jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+    jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12
+  };
+  let parsedIso = null;
+  const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    parsedIso = `${isoMatch[1]}-${String(Number(isoMatch[2])).padStart(2, '0')}-${String(Number(isoMatch[3])).padStart(2, '0')}`;
+  } else {
+    const dmyMatch = raw.match(/^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})$/);
+    if (dmyMatch) {
+      const mNum = monthsMap[dmyMatch[2].slice(0, 3).toLowerCase()];
+      if (mNum) {
+        parsedIso = `${dmyMatch[3]}-${String(mNum).padStart(2, '0')}-${String(Number(dmyMatch[1])).padStart(2, '0')}`;
+      }
+    }
+  }
+  if (parsedIso && parsedIso < todayIso) {
+    return todayShort;
+  }
+  return raw;
+}
+
 function renderCreateBillPage(container, params = {}) {
   const { customers } = AppState.data;
+
+  // Auto-redirect to Edit Mode if opened for a jobId that already has an invoice
+  let effectiveEditId = params.editInvoiceId || '';
+  if (!effectiveEditId && params.jobId) {
+    const linkedJob = AppState.getJobById(params.jobId);
+    const existingForJob = AppState.getInvoiceByJobId(params.jobId, linkedJob && linkedJob.invoiceId);
+    if (existingForJob) {
+      effectiveEditId = existingForJob.id;
+    }
+  }
+  const editingInvoice = effectiveEditId ? AppState.getInvoiceById(effectiveEditId) : null;
+  const isEditMode = Boolean(editingInvoice);
 
   if (!customers || customers.length === 0) {
     container.innerHTML = `
@@ -16238,20 +16747,62 @@ function renderCreateBillPage(container, params = {}) {
     return;
   }
 
-  if (!billDraft || (params.customerId && params.customerId !== billDraft.customerId)) {
+  if (isEditMode) {
+    if (!billDraft || billDraft.editInvoiceId !== editingInvoice.id) {
+      const invCustomer = AppState.getCustomerById(editingInvoice.customerId) || customers[0];
+      const matchedVehicle =
+        (invCustomer.vehicles || []).find((v) => v.regNumber === editingInvoice.vehicleNumber) ||
+        (invCustomer.vehicles || [])[0] ||
+        null;
+      const existingPaidTotal = (editingInvoice.payments || []).reduce(
+        (sum, p) => sum + (Number(p.amount) || 0),
+        0
+      );
+      billDraft = {
+        editInvoiceId: editingInvoice.id,
+        returnTo: params.returnTo || 'bill-details',
+        returnCustomerId: params.customerId || editingInvoice.customerId,
+        customerId: invCustomer.id,
+        vehicleId: matchedVehicle ? matchedVehicle.id : null,
+        customInvoiceNumber: editingInvoice.id,
+        date: resolveEditInvoiceDate(editingInvoice.date),
+        jobId: editingInvoice.jobId || '',
+        items: (editingInvoice.items || []).map((it) => ({
+          description: it.description || '',
+          qty: it.qty !== undefined && it.qty !== null && it.qty !== '' ? Number(it.qty) : 1,
+          rate:
+            it.rate !== undefined && it.rate !== null && it.rate !== ''
+              ? Number(it.rate)
+              : Number(it.amount) || 0
+        })),
+        discount: Number(editingInvoice.discount) > 0 ? String(editingInvoice.discount) : '',
+        amountReceived: String(existingPaidTotal),
+        existingPaidAmount: existingPaidTotal,
+        existingPaymentsCount: (editingInvoice.payments || []).length,
+        paymentMethod:
+          (editingInvoice.payments && editingInvoice.payments[0] && editingInvoice.payments[0].method) ||
+          'Cash'
+      };
+    }
+  } else if (!params._internalRerender || !billDraft || billDraft.editInvoiceId) {
     const initialCustomer = params.customerId
       ? AppState.getCustomerById(params.customerId)
       : customers[0];
     const initialVehicle = initialCustomer && initialCustomer.vehicles ? initialCustomer.vehicles[0] : null;
+    const candidateJobId = params.jobId || '';
 
     billDraft = {
+      editInvoiceId: '',
+      returnTo: params.returnTo || 'payments',
       customerId: initialCustomer.id,
       vehicleId: initialVehicle ? initialVehicle.id : null,
       date: parseSelectedDateMeta(getLocalTodayIso()).formattedShort,
-      jobId: params.jobId || initialCustomer.currentJobId || '',
+      jobId: candidateJobId,
       items: createDefaultItems(),
-      discount: 0,
-      amountReceived: 0,
+      discount: '',
+      amountReceived: '',
+      existingPaidAmount: 0,
+      existingPaymentsCount: 0,
       paymentMethod: 'Cash'
     };
   }
@@ -16269,9 +16820,15 @@ function renderCreateBillPage(container, params = {}) {
       (sum, item) => sum + Math.round((Number(item.qty) || 0) * (Number(item.rate) || 0)),
       0
     );
-    const discount = Math.max(0, Number(billDraft.discount) || 0);
+    const rawDisc = billDraft.discount === '' || billDraft.discount === null || billDraft.discount === undefined ? '' : String(billDraft.discount).trim();
+    const discount = rawDisc === '' ? 0 : Math.max(0, Number(rawDisc) || 0);
     const grandTotal = Math.max(0, subtotal - discount);
-    const received = Math.max(0, Number(billDraft.amountReceived) || 0);
+    const rawRec = billDraft.amountReceived === '' || billDraft.amountReceived === null || billDraft.amountReceived === undefined ? '' : String(billDraft.amountReceived).trim();
+    const received = isEditMode
+      ? Number(billDraft.existingPaidAmount) || 0
+      : rawRec === ''
+      ? 0
+      : Math.max(0, Number(rawRec) || 0);
     const pending = grandTotal - received;
     const exceedsGrandTotal = received > grandTotal;
     return { subtotal, discount, grandTotal, received, pending, exceedsGrandTotal };
@@ -16293,9 +16850,8 @@ function renderCreateBillPage(container, params = {}) {
             ${ICONS.chevronLeft}
           </button>
           <div>
-            <div class="eyebrow">PAYMENT MANAGEMENT</div>
-            <h1 class="page-title">Create Bill</h1>
-            <p class="page-subtitle">Generate a new customer invoice</p>
+            <h1 class="page-title">${isEditMode ? 'Edit Bill' : 'Create Bill'}</h1>
+            <p class="page-subtitle">${isEditMode ? 'Editing Existing Invoice' : 'Generate a new customer invoice'}</p>
           </div>
         </div>
       </header>
@@ -16308,31 +16864,39 @@ function renderCreateBillPage(container, params = {}) {
               <span style="color:var(--color-primary); display:inline-flex;">${ICONS.users}</span>
               <span>Customer Details</span>
             </h2>
-            <button
-              type="button"
-              id="bill-add-customer-btn"
-              style="font-size:var(--text-xs); font-weight:700; color:var(--color-primary);"
-            >
-              + Add Customer
-            </button>
+            ${
+              isEditMode
+                ? ''
+                : `<button
+                    type="button"
+                    id="bill-add-customer-btn"
+                    style="font-size:var(--text-xs); font-weight:700; color:var(--color-primary);"
+                  >
+                    + Add Customer
+                  </button>`
+            }
           </div>
 
-          <div class="form-group">
-            <div class="input-wrapper">
-              <span class="input-icon-left">${ICONS.search}</span>
-              <select id="bill-customer-select" class="form-select" style="padding-left:2.5rem; font-weight:600;">
-                ${customers
-                  .map(
-                    (c) => `
-                  <option value="${c.id}" ${c.id === selectedCustomer.id ? 'selected' : ''}>
-                    ${escapeHtml(c.name)} (${escapeHtml(c.phone)} • ${escapeHtml(c.vehicleNumber)})
-                  </option>
-                `
-                  )
-                  .join('')}
-              </select>
-            </div>
-          </div>
+          ${
+            isEditMode
+              ? ''
+              : `<div class="form-group">
+                  <div class="input-wrapper">
+                    <span class="input-icon-left">${ICONS.search}</span>
+                    <select id="bill-customer-select" class="form-select" style="padding-left:2.5rem; font-weight:600;">
+                      ${customers
+                        .map(
+                          (c) => `
+                        <option value="${c.id}" ${c.id === selectedCustomer.id ? 'selected' : ''}>
+                          ${escapeHtml(c.name)} (${escapeHtml(c.phone)} • ${escapeHtml(c.vehicleNumber)})
+                        </option>
+                      `
+                        )
+                        .join('')}
+                    </select>
+                  </div>
+                </div>`
+          }
 
           <div class="form-row-2" style="padding-bottom:10px; border-bottom:1px solid var(--color-border-subtle); margin-bottom:10px;">
             <div>
@@ -16389,9 +16953,9 @@ function renderCreateBillPage(container, params = {}) {
               <input
                 type="text"
                 id="bill-inv-no"
-                class="form-input ${(AppState.data.invoiceSettings && AppState.data.invoiceSettings.autoInvoiceNumber === false) ? '' : 'readonly-field'}"
+                class="form-input ${isEditMode || !(AppState.data.invoiceSettings && AppState.data.invoiceSettings.autoInvoiceNumber === false) ? 'readonly-field' : ''}"
                 value="${escapeHtml(billDraft.customInvoiceNumber || autoInvoiceNumber)}"
-                ${(AppState.data.invoiceSettings && AppState.data.invoiceSettings.autoInvoiceNumber === false) ? '' : 'readonly aria-readonly="true"'}
+                ${isEditMode || !(AppState.data.invoiceSettings && AppState.data.invoiceSettings.autoInvoiceNumber === false) ? 'readonly aria-readonly="true"' : ''}
                 title="Invoice number"
               />
             </div>
@@ -16414,9 +16978,10 @@ function renderCreateBillPage(container, params = {}) {
               <input
                 type="text"
                 id="bill-job-id"
-                class="form-input"
+                class="form-input ${isEditMode ? 'readonly-field' : ''}"
                 placeholder="e.g. JOB-1027"
                 value="${escapeHtml(billDraft.jobId)}"
+                ${isEditMode ? 'readonly aria-readonly="true"' : ''}
               />
             </div>
           </div>
@@ -16545,7 +17110,7 @@ function renderCreateBillPage(container, params = {}) {
                   class="form-input"
                   style="width:76px; padding:3px 6px; font-size:var(--text-xs); text-align:right; font-weight:700;"
                   min="0"
-                  value="${billDraft.discount}"
+                  value="${billDraft.discount === '' || billDraft.discount === null || billDraft.discount === undefined ? '' : escapeHtml(String(billDraft.discount))}"
                 />
               </div>
             </div>
@@ -16559,41 +17124,58 @@ function renderCreateBillPage(container, params = {}) {
           </div>
         </section>
 
-        <!-- 5. Payment Details Card (Image 6) -->
+        <!-- 5. Payment Details Card (Create Mode: enter payment | Edit Mode: preserve existing payments) -->
         <section class="card">
           <h2 class="section-title" style="margin-bottom:12px;">
             <span style="color:var(--color-primary); display:inline-flex;">${ICONS.wallet}</span>
-            <span>Payment Details</span>
+            <span>${isEditMode ? 'Existing Payment Information' : 'Payment Details'}</span>
           </h2>
 
-          <div class="form-row-2" style="margin-bottom:12px;">
-            <div>
-              <label class="form-label" for="bill-received-input">Amount Received (₹)</label>
-              <div class="input-wrapper">
-                <span class="input-icon-left" style="font-weight:800; color:var(--color-text);">₹</span>
-                <input
-                  type="number"
-                  id="bill-received-input"
-                  class="form-input with-left-icon"
-                  style="font-weight:800;"
-                  min="0"
-                  max="${summary.grandTotal}"
-                  value="${billDraft.amountReceived}"
-                />
-              </div>
-            </div>
+          ${
+            isEditMode
+              ? `<div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; margin-bottom:12px; padding:10px 12px; border-radius:12px; background:var(--color-surface-subtle); border:1px solid var(--color-border-subtle);">
+                  <div>
+                    <div style="font-size:11px; color:var(--color-muted); font-weight:600;">Amount Already Paid</div>
+                    <div id="edit-existing-paid-el" style="font-size:1.05rem; font-weight:800; color:var(--color-success); margin-top:2px;">
+                      ${formatCurrency(summary.received)}
+                    </div>
+                  </div>
+                  <div style="border-left:1px solid var(--color-border-subtle); padding-left:10px;">
+                    <div style="font-size:11px; color:var(--color-muted); font-weight:600;">Recorded Payments</div>
+                    <div style="font-size:var(--text-sm); font-weight:800; color:var(--color-text); margin-top:2px;">
+                      ${billDraft.existingPaymentsCount || 0} ${(billDraft.existingPaymentsCount || 0) === 1 ? 'payment' : 'payments'} preserved
+                    </div>
+                  </div>
+                </div>`
+              : `<div class="form-row-2" style="margin-bottom:12px;">
+                  <div>
+                    <label class="form-label" for="bill-received-input">Amount Received (₹)</label>
+                    <div class="input-wrapper">
+                      <span class="input-icon-left" style="font-weight:800; color:var(--color-text);">₹</span>
+                      <input
+                        type="number"
+                        id="bill-received-input"
+                        class="form-input with-left-icon"
+                        style="font-weight:800;"
+                        min="0"
+                        max="${summary.grandTotal}"
+                        value="${billDraft.amountReceived === '' || billDraft.amountReceived === null || billDraft.amountReceived === undefined ? '' : escapeHtml(String(billDraft.amountReceived))}"
+                      />
+                    </div>
+                  </div>
 
-            <div>
-              <label class="form-label" for="bill-method-select">Payment Method</label>
-              <select id="bill-method-select" class="form-select" style="font-weight:700;">
-                ${['Cash', 'UPI', 'Bank Transfer', 'Other']
-                  .map(
-                    (m) => `<option value="${m}" ${billDraft.paymentMethod === m ? 'selected' : ''}>${m}</option>`
-                  )
-                  .join('')}
-              </select>
-            </div>
-          </div>
+                  <div>
+                    <label class="form-label" for="bill-method-select">Payment Method</label>
+                    <select id="bill-method-select" class="form-select" style="font-weight:700;">
+                      ${['Cash', 'UPI', 'Bank Transfer', 'Other']
+                        .map(
+                          (m) => `<option value="${m}" ${billDraft.paymentMethod === m ? 'selected' : ''}>${m}</option>`
+                        )
+                        .join('')}
+                    </select>
+                  </div>
+                </div>`
+          }
 
           <div
             id="bill-pending-banner"
@@ -16601,7 +17183,7 @@ function renderCreateBillPage(container, params = {}) {
           >
             <span style="display:inline-flex; align-items:center; gap:6px; font-size:var(--text-xs);">
               ${ICONS.clock}
-              <span>Pending Amount</span>
+              <span>${isEditMode ? 'Updated Balance Due' : 'Pending Amount'}</span>
             </span>
             <span id="summary-pending-el" style="font-size:1.05rem;">${summary.pending < 0 ? '-' + formatCurrency(Math.abs(summary.pending)) : formatCurrency(summary.pending)}</span>
           </div>
@@ -16611,13 +17193,13 @@ function renderCreateBillPage(container, params = {}) {
             style="margin-top:8px;"
             ${summary.exceedsGrandTotal ? '' : 'hidden'}
           >
-            ${summary.exceedsGrandTotal ? 'Amount received cannot exceed the Grand Total. Please correct the received amount before generating the invoice.' : ''}
+            ${summary.exceedsGrandTotal ? (isEditMode ? `Revised bill total cannot be lower than the amount already received (${formatCurrency(summary.received)}).` : 'Amount received cannot exceed the Grand Total. Please correct the received amount before generating the invoice.') : ''}
           </div>
         </section>
 
         <div id="create-bill-error" class="form-error-msg" style="margin-bottom:10px;" hidden></div>
 
-        <!-- Generate Bill & Cancel Buttons -->
+        <!-- Generate / Save Bill & Cancel Buttons -->
         <button
           type="submit"
           id="generate-bill-submit-btn"
@@ -16625,8 +17207,8 @@ function renderCreateBillPage(container, params = {}) {
           style="margin-bottom:12px;"
           ${summary.exceedsGrandTotal ? 'disabled' : ''}
         >
-          ${ICONS.fileText}
-          <span>Generate Bill</span>
+          ${isEditMode ? ICONS.check : ICONS.fileText}
+          <span>${isEditMode ? 'Save Bill Changes' : 'Generate Bill'}</span>
         </button>
 
         <button
@@ -16657,8 +17239,8 @@ function syncBillDraftFromDOM(container) {
 
   if (dateEl) billDraft.date = dateEl.value;
   if (jobEl) billDraft.jobId = jobEl.value;
-  if (discEl) billDraft.discount = Math.max(0, Number(discEl.value) || 0);
-  if (recEl) billDraft.amountReceived = Math.max(0, Number(recEl.value) || 0);
+  if (discEl) billDraft.discount = discEl.value.trim();
+  if (recEl) billDraft.amountReceived = recEl.value.trim();
   if (methEl) billDraft.paymentMethod = methEl.value;
 
   container.querySelectorAll('[data-item-row]').forEach((row) => {
@@ -16694,9 +17276,19 @@ function updateLiveBillTotalsInDOM(container) {
     }
   });
 
-  const discount = Math.max(0, Number(billDraft.discount) || 0);
+  const rawDiscStr = billDraft.discount === '' || billDraft.discount === null || billDraft.discount === undefined ? '' : String(billDraft.discount).trim();
+  const parsedDisc = rawDiscStr === '' ? 0 : Number(rawDiscStr);
+  const discount = isNaN(parsedDisc) || parsedDisc < 0 ? 0 : parsedDisc;
   const grandTotal = Math.max(0, subtotal - discount);
-  const received = Math.max(0, Number(billDraft.amountReceived) || 0);
+  const isEditDraft = Boolean(billDraft && billDraft.editInvoiceId);
+  const rawRecStr = billDraft.amountReceived === '' || billDraft.amountReceived === null || billDraft.amountReceived === undefined ? '' : String(billDraft.amountReceived).trim();
+  const parsedRec = rawRecStr === '' ? 0 : Number(rawRecStr);
+  const isNegativeRec = !isEditDraft && rawRecStr !== '' && !isNaN(parsedRec) && parsedRec < 0;
+  const received = isEditDraft
+    ? Number(billDraft.existingPaidAmount) || 0
+    : isNaN(parsedRec) || parsedRec < 0
+    ? 0
+    : parsedRec;
   const pending = grandTotal - received;
   const exceedsGrandTotal = received > grandTotal;
 
@@ -16713,7 +17305,7 @@ function updateLiveBillTotalsInDOM(container) {
   if (pendEl) pendEl.textContent = pending < 0 ? `-${formatCurrency(Math.abs(pending))}` : formatCurrency(pending);
   if (recInput) {
     recInput.setAttribute('max', String(grandTotal));
-    recInput.classList.toggle('input-error', exceedsGrandTotal);
+    recInput.classList.toggle('input-error', exceedsGrandTotal || isNegativeRec);
   }
   if (pendBanner) {
     if (exceedsGrandTotal) {
@@ -16731,8 +17323,13 @@ function updateLiveBillTotalsInDOM(container) {
     }
   }
   if (recErr) {
-    if (exceedsGrandTotal) {
-      recErr.textContent = 'Amount received cannot exceed the Grand Total. Please correct the received amount before generating the invoice.';
+    if (isNegativeRec) {
+      recErr.textContent = 'Amount received cannot be negative.';
+      recErr.hidden = false;
+    } else if (exceedsGrandTotal) {
+      recErr.textContent = isEditDraft
+        ? `Revised bill total cannot be lower than the amount already received (${formatCurrency(received)}).`
+        : 'Amount received cannot exceed the Grand Total. Please correct the received amount before generating the invoice.';
       recErr.hidden = false;
     } else {
       recErr.textContent = '';
@@ -16746,17 +17343,29 @@ function updateLiveBillTotalsInDOM(container) {
 
 function bindCreateBillEvents(container, params) {
   const goBack = () => {
+    const editId = billDraft && billDraft.editInvoiceId;
+    const retTo = (billDraft && billDraft.returnTo) || 'payments';
+    const retCust = billDraft && billDraft.returnCustomerId;
     billDraft = null;
-    Router.navigate('payments');
+    if (editId && retTo === 'customer-profile' && retCust) {
+      Router.navigate('customer-profile', { customerId: retCust });
+    } else if (editId) {
+      Router.navigate('bill-details', { invoiceId: editId });
+    } else {
+      Router.navigate('payments');
+    }
   };
 
   container.querySelector('#create-bill-back-btn').addEventListener('click', goBack);
   container.querySelector('#cancel-create-bill-btn').addEventListener('click', goBack);
 
-  container.querySelector('#bill-add-customer-btn').addEventListener('click', () => {
-    syncBillDraftFromDOM(container);
-    Router.navigate('add-customer', { returnTo: 'create-bill' });
-  });
+  const addCustBtn = container.querySelector('#bill-add-customer-btn');
+  if (addCustBtn) {
+    addCustBtn.addEventListener('click', () => {
+      syncBillDraftFromDOM(container);
+      Router.navigate('add-customer', { returnTo: 'create-bill' });
+    });
+  }
 
   // Section 16: Clicking Invoice Date inside Bill Details opens interactive Date Picker
   const billDateInput = container.querySelector('#bill-inv-date');
@@ -16771,13 +17380,14 @@ function bindCreateBillEvents(container, params) {
   }
 
   const billCustSelect = container.querySelector('#bill-customer-select');
+  if (billCustSelect) {
   billCustSelect.addEventListener('change', (e) => {
     syncBillDraftFromDOM(container);
     const cust = AppState.getCustomerById(e.target.value);
     billDraft.customerId = cust.id;
     billDraft.vehicleId = cust.vehicles[0] ? cust.vehicles[0].id : null;
     billDraft.jobId = cust.currentJobId || '';
-    renderCreateBillPage(container, { customerId: cust.id });
+    renderCreateBillPage(container, { ...params, customerId: cust.id, _internalRerender: true });
   });
   billCustSelect.addEventListener('mousedown', (e) => {
     e.preventDefault();
@@ -16799,11 +17409,12 @@ function bindCreateBillEvents(container, params) {
           billDraft.customerId = cust.id;
           billDraft.vehicleId = cust.vehicles[0] ? cust.vehicles[0].id : null;
           billDraft.jobId = cust.currentJobId || '';
-          renderCreateBillPage(container, { customerId: cust.id });
+          renderCreateBillPage(container, { ...params, customerId: cust.id, _internalRerender: true });
         }
       }
     });
   });
+  }
 
   const billMethodSelect = container.querySelector('#bill-method-select');
   if (billMethodSelect) {
@@ -16841,7 +17452,7 @@ function bindCreateBillEvents(container, params) {
     vehSelect.addEventListener('change', (e) => {
       syncBillDraftFromDOM(container);
       billDraft.vehicleId = e.target.value;
-      renderCreateBillPage(container, params);
+      renderCreateBillPage(container, { ...params, _internalRerender: true });
     });
   }
 
@@ -16854,15 +17465,18 @@ function bindCreateBillEvents(container, params) {
     updateLiveBillTotalsInDOM(container);
   });
 
-  container.querySelector('#bill-received-input').addEventListener('input', () => {
-    updateLiveBillTotalsInDOM(container);
-  });
+  const recInputElListener = container.querySelector('#bill-received-input');
+  if (recInputElListener) {
+    recInputElListener.addEventListener('input', () => {
+      updateLiveBillTotalsInDOM(container);
+    });
+  }
 
   // Part 4 (Item 5): Add Item with Empty Default Values (Description: '', Qty: 1, Rate: '', Amount: '')
   container.querySelector('#bill-add-item-btn').addEventListener('click', () => {
     syncBillDraftFromDOM(container);
     billDraft.items.push({ description: '', qty: 1, rate: '' });
-    renderCreateBillPage(container, params);
+    renderCreateBillPage(container, { ...params, _internalRerender: true });
   });
 
   // Remove Item (allows deleting individual items, recalculating subtotal immediately)
@@ -16872,18 +17486,36 @@ function bindCreateBillEvents(container, params) {
       const idx = Number(btn.getAttribute('data-remove-item'));
       if (idx >= 0 && idx < billDraft.items.length) {
         billDraft.items.splice(idx, 1);
-        renderCreateBillPage(container, params);
+        renderCreateBillPage(container, { ...params, _internalRerender: true });
       }
     });
   });
 
-  // Submit Generate Bill
+  // Submit Generate Bill (Create Mode) or Save Bill Changes (Edit Mode)
   container.querySelector('#create-bill-page-form').addEventListener('submit', (e) => {
     e.preventDefault();
     syncBillDraftFromDOM(container);
 
     const errEl = container.querySelector('#create-bill-error');
     errEl.hidden = true;
+
+    if (billDraft && billDraft.editInvoiceId) {
+      const editId = billDraft.editInvoiceId;
+      const result = AppState.updateExistingBill(editId, {
+        date: billDraft.date,
+        items: billDraft.items,
+        discount: billDraft.discount
+      });
+      if (!result.ok) {
+        errEl.textContent = result.error;
+        errEl.hidden = false;
+        return;
+      }
+      billDraft = null;
+      showToast('Invoice updated successfully');
+      Router.navigate('bill-details', { invoiceId: result.invoice.id });
+      return;
+    }
 
     const result = AppState.generateBill({
       customerId: billDraft.customerId,
@@ -16900,6 +17532,11 @@ function bindCreateBillEvents(container, params) {
     if (!result.ok) {
       errEl.textContent = result.error;
       errEl.hidden = false;
+      const recInputEl = container.querySelector('#bill-received-input');
+      if (recInputEl && /amount received/i.test(result.error || '')) {
+        recInputEl.classList.add('input-error');
+        recInputEl.focus();
+      }
       return;
     }
 
@@ -16979,6 +17616,12 @@ function buildOfficialA4InvoiceHtml(invoice, businessProfile, summary, invSettin
 
   // Strictly use ONLY the garage owner's actual uploaded/cropped QR image (NEVER generate a UPI QR or fake QR)
   const uploadedQrSrc = String((invSettings && invSettings.qrCodeDataUrl) || '').trim();
+  const customLogoSrc = String(
+    (invSettings && invSettings.logoDataUrl) ||
+    (businessProfile && businessProfile.logoDataUrl) ||
+    ''
+  ).trim();
+  const customSignatureSrc = String((invSettings && invSettings.signatureDataUrl) || '').trim();
   const hasUploadedQr = Boolean(uploadedQrSrc && (uploadedQrSrc.startsWith('data:image/') || /^https?:\/\//i.test(uploadedQrSrc)));
 
   const itemsRowsHtml = (summary.items || [])
@@ -17131,6 +17774,27 @@ function buildOfficialA4InvoiceHtml(invoice, businessProfile, summary, invSettin
       height: 16.2mm;
       display: block;
       margin: 0 auto 0.6mm auto;
+    }
+
+    .custom-garage-logo {
+      display: block;
+      max-width: 38mm;
+      max-height: 22mm;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      margin: 0 auto;
+    }
+
+    .custom-signature-img {
+      display: block;
+      max-width: 44mm;
+      max-height: 16mm;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      margin: 0 auto 1.6mm auto;
+      background: transparent;
     }
 
     .brand-wordmark {
@@ -17427,23 +18091,27 @@ function buildOfficialA4InvoiceHtml(invoice, businessProfile, summary, invSettin
       <table class="header-table">
         <tr>
           <td class="brand-cell">
-            <svg class="brand-icon" viewBox="0 0 130 70" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <g fill="#0E76FD">
-                <path d="M84 4 L92 4 L94 11.2 A23 23 0 0 1 100.2 13.8 L106.5 9.8 L112.2 15.5 L108.2 21.8 A23 23 0 0 1 110.8 28 L118 30 L118 38 L110.8 40 A23 23 0 0 1 108.2 46.2 L112.2 52.5 L106.5 58.2 L100.2 54.2 A23 23 0 0 1 94 56.8 L92 64 L84 64 L82 56.8 A23 23 0 0 1 75.8 54.2 L69.5 58.2 L63.8 52.5 L67.8 46.2 A23 23 0 0 1 65.2 40 L58 38 L58 30 L65.2 28 A23 23 0 0 1 67.8 21.8 L63.8 15.5 L69.5 9.8 L75.8 13.8 A23 23 0 0 1 82 11.2 Z" />
-                <circle cx="88" cy="34" r="14.5" fill="#FFFFFF" />
-              </g>
-              <path d="M17 34 L25 22.5 C27.8 18.6 31.8 17 37 17 L64 17 C69.2 17 73.2 18.6 76 22.5 L84 34 L88.5 34 C91.8 34 94 36.2 94 39.2 L94 53 C94 56.2 91.8 58.5 88.8 58.5 L86.5 58.5 L86.5 62 C86.5 64.8 84.3 67 81.5 67 L73.5 67 C70.7 67 68.5 64.8 68.5 62 L68.5 59.5 L32.5 59.5 L32.5 62 C32.5 64.8 30.3 67 27.5 67 L19.5 67 C16.7 67 14.5 64.8 14.5 62 L14.5 58.5 L12.2 58.5 C9.2 58.5 7 56.2 7 53 L7 39.2 C7 36.2 9.2 34 12.5 34 Z" fill="#FFFFFF" />
-              <path d="M19.5 35.5 L27 24.5 C29.2 21.4 32.5 20 37 20 L64 20 C68.5 20 71.8 21.4 74 24.5 L81.5 35.5 L87 35.5 C89.5 35.5 91 37.1 91 39.5 L91 52.2 C91 54.6 89.4 56 87 56 L84 56 L84 60.8 C84 62.6 82.6 64 80.8 64 L74.2 64 C72.4 64 71 62.6 71 60.8 L71 56 L30 56 L30 60.8 C30 62.6 28.6 64 26.8 64 L20.2 64 C18.4 64 17 62.6 17 60.8 L17 56 L14 56 C11.6 56 10 54.6 10 52.2 L10 39.5 C10 37.1 11.5 35.5 14 35.5 Z" fill="#0E76FD" />
-              <rect x="8.5" y="30.5" width="7.5" height="3.8" rx="1.9" fill="#0E76FD" />
-              <rect x="85" y="30.5" width="7.5" height="3.8" rx="1.9" fill="#0E76FD" />
-              <path d="M25.5 35 L31.2 26.5 C32.6 24.6 34.8 23.8 37.6 23.8 L63.4 23.8 C66.2 23.8 68.4 24.6 69.8 26.5 L75.5 35 Z" fill="#FFFFFF" />
-              <circle cx="21.5" cy="45.5" r="4.1" fill="#FFFFFF" />
-              <circle cx="79.5" cy="45.5" r="4.1" fill="#FFFFFF" />
-              <rect x="33.5" y="44" width="34" height="3.6" rx="1.8" fill="#FFFFFF" />
-            </svg>
-            <div class="brand-wordmark">
-              <span class="garage">Garage</span><span class="flow">Flow</span>
-            </div>
+            ${
+              customLogoSrc
+                ? `<img class="custom-garage-logo" src="${escapeHtml(customLogoSrc)}" alt="${escapeHtml(rawGarageName)} Logo" />`
+                : `<svg class="brand-icon" viewBox="0 0 130 70" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <g fill="#0E76FD">
+                      <path d="M84 4 L92 4 L94 11.2 A23 23 0 0 1 100.2 13.8 L106.5 9.8 L112.2 15.5 L108.2 21.8 A23 23 0 0 1 110.8 28 L118 30 L118 38 L110.8 40 A23 23 0 0 1 108.2 46.2 L112.2 52.5 L106.5 58.2 L100.2 54.2 A23 23 0 0 1 94 56.8 L92 64 L84 64 L82 56.8 A23 23 0 0 1 75.8 54.2 L69.5 58.2 L63.8 52.5 L67.8 46.2 A23 23 0 0 1 65.2 40 L58 38 L58 30 L65.2 28 A23 23 0 0 1 67.8 21.8 L63.8 15.5 L69.5 9.8 L75.8 13.8 A23 23 0 0 1 82 11.2 Z" />
+                      <circle cx="88" cy="34" r="14.5" fill="#FFFFFF" />
+                    </g>
+                    <path d="M17 34 L25 22.5 C27.8 18.6 31.8 17 37 17 L64 17 C69.2 17 73.2 18.6 76 22.5 L84 34 L88.5 34 C91.8 34 94 36.2 94 39.2 L94 53 C94 56.2 91.8 58.5 88.8 58.5 L86.5 58.5 L86.5 62 C86.5 64.8 84.3 67 81.5 67 L73.5 67 C70.7 67 68.5 64.8 68.5 62 L68.5 59.5 L32.5 59.5 L32.5 62 C32.5 64.8 30.3 67 27.5 67 L19.5 67 C16.7 67 14.5 64.8 14.5 62 L14.5 58.5 L12.2 58.5 C9.2 58.5 7 56.2 7 53 L7 39.2 C7 36.2 9.2 34 12.5 34 Z" fill="#FFFFFF" />
+                    <path d="M19.5 35.5 L27 24.5 C29.2 21.4 32.5 20 37 20 L64 20 C68.5 20 71.8 21.4 74 24.5 L81.5 35.5 L87 35.5 C89.5 35.5 91 37.1 91 39.5 L91 52.2 C91 54.6 89.4 56 87 56 L84 56 L84 60.8 C84 62.6 82.6 64 80.8 64 L74.2 64 C72.4 64 71 62.6 71 60.8 L71 56 L30 56 L30 60.8 C30 62.6 28.6 64 26.8 64 L20.2 64 C18.4 64 17 62.6 17 60.8 L17 56 L14 56 C11.6 56 10 54.6 10 52.2 L10 39.5 C10 37.1 11.5 35.5 14 35.5 Z" fill="#0E76FD" />
+                    <rect x="8.5" y="30.5" width="7.5" height="3.8" rx="1.9" fill="#0E76FD" />
+                    <rect x="85" y="30.5" width="7.5" height="3.8" rx="1.9" fill="#0E76FD" />
+                    <path d="M25.5 35 L31.2 26.5 C32.6 24.6 34.8 23.8 37.6 23.8 L63.4 23.8 C66.2 23.8 68.4 24.6 69.8 26.5 L75.5 35 Z" fill="#FFFFFF" />
+                    <circle cx="21.5" cy="45.5" r="4.1" fill="#FFFFFF" />
+                    <circle cx="79.5" cy="45.5" r="4.1" fill="#FFFFFF" />
+                    <rect x="33.5" y="44" width="34" height="3.6" rx="1.8" fill="#FFFFFF" />
+                  </svg>
+                  <div class="brand-wordmark">
+                    <span class="garage">Garage</span><span class="flow">Flow</span>
+                  </div>`
+            }
           </td>
           <td class="vsep-cell" aria-hidden="true"><div class="header-vsep"></div></td>
           <td class="garage-info-cell">
@@ -17661,12 +18329,16 @@ function buildOfficialA4InvoiceHtml(invoice, businessProfile, summary, invSettin
             <p class="footer-note">Keep this invoice for future reference.</p>
           </td>
           <td class="signature-cell">
-            <svg class="signature-svg" viewBox="0 0 180 76" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Authorised Signature">
-              <path d="M44 10 C22 14, 7 40, 12 58 C16 68, 32 54, 48 34 C58 21, 64 11, 61 13 C55 24, 44 49, 44 61 C44 65, 53 50, 66 36 C75 26, 82 14, 83 12 C79 25, 72 48, 69 65 C68 70, 74 58, 84 44 C91 34, 98 28, 100 32 C101 36, 95 47, 97 50 C100 53, 108 42, 114 40 C118 39, 117 47, 121 48 C125 48, 132 42, 139 42 C148 42, 160 40, 173 39"
-                stroke="#0F2C74" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M62 43 C74 42, 85 40, 96 38"
-                stroke="#0F2C74" stroke-width="2.1" stroke-linecap="round"/>
-            </svg>
+            ${
+              customSignatureSrc
+                ? `<img class="custom-signature-img" src="${escapeHtml(customSignatureSrc)}" alt="Authorised Signature" />`
+                : `<svg class="signature-svg" viewBox="0 0 180 76" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Authorised Signature">
+                    <path d="M44 10 C22 14, 7 40, 12 58 C16 68, 32 54, 48 34 C58 21, 64 11, 61 13 C55 24, 44 49, 44 61 C44 65, 53 50, 66 36 C75 26, 82 14, 83 12 C79 25, 72 48, 69 65 C68 70, 74 58, 84 44 C91 34, 98 28, 100 32 C101 36, 95 47, 97 50 C100 53, 108 42, 114 40 C118 39, 117 47, 121 48 C125 48, 132 42, 139 42 C148 42, 160 40, 173 39"
+                      stroke="#0F2C74" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M62 43 C74 42, 85 40, 96 38"
+                      stroke="#0F2C74" stroke-width="2.1" stroke-linecap="round"/>
+                  </svg>`
+            }
             <div class="signature-line"></div>
             <div class="signature-title">Authorised Signatory</div>
             <div class="signature-garage">${escapeHtml(rawGarageName)}</div>
@@ -18638,14 +19310,6 @@ function renderBillDetailsPage(container, params = {}) {
 
         <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
           ${renderStatusBadge(summary.status)}
-          <button
-            type="button"
-            class="icon-btn-sm no-print"
-            id="bill-more-actions-btn"
-            aria-label="More invoice options"
-          >
-            ${ICONS.moreVertical}
-          </button>
         </div>
       </header>
 
@@ -18844,24 +19508,21 @@ function renderBillDetailsPage(container, params = {}) {
           type="button"
           class="btn btn-primary btn-lg btn-block"
           id="open-record-payment-btn"
-          style="margin-bottom:12px;"
+          style="margin-bottom:10px;"
           ${summary.balance <= 0 ? 'disabled' : ''}
         >
           <span style="font-weight:800; font-size:1.1rem;">₹+</span>
           <span>${summary.balance > 0 ? 'Record Payment' : 'Invoice Fully Paid'}</span>
         </button>
 
-        <div style="display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px;">
-          <button type="button" class="btn btn-outline btn-pill" id="share-invoice-btn">
-            ${ICONS.whatsapp}
-            <span>Share Invoice</span>
-          </button>
-
-          <button type="button" class="btn btn-outline btn-pill" id="print-invoice-btn">
-            ${ICONS.printer}
-            <span>Print Invoice</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          class="btn btn-outline btn-lg btn-block"
+          id="bill-edit-btn"
+        >
+          ${ICONS.edit}
+          <span>Edit Bill</span>
+        </button>
       </div>
     </div>
   `;
@@ -18911,86 +19572,14 @@ function bindBillDetailsEvents(container, invoice, summary) {
     });
   }
 
-  // Share Invoice button
-  const shareBtn = container.querySelector('#share-invoice-btn');
-  if (shareBtn) {
-    shareBtn.addEventListener('click', () => {
-      const shareText = `GarageFlow Invoice ${invoice.id} for ${invoice.customerName} (${invoice.vehicleNumber}): Bill Total ${formatCurrency(summary.total)}, Paid ${formatCurrency(summary.paid)}, Balance Due ${formatCurrency(summary.balance)}.`;
-      Modal.open({
-        title: `Share Invoice ${invoice.id}`,
-        bodyHtml: `
-          <p style="font-size:var(--text-sm); color:var(--color-muted); margin-bottom:12px;">
-            Send invoice summary to <strong>${escapeHtml(invoice.customerName)}</strong> (${escapeHtml(invoice.customerPhone)}) or copy to clipboard:
-          </p>
-          <div class="card-subtle" style="font-size:13px; margin-bottom:14px;">
-            ${escapeHtml(shareText)}
-          </div>
-          <div style="display:flex; gap:10px;">
-            <button type="button" class="btn btn-outline btn-block" id="copy-invoice-summary-btn">Copy Summary</button>
-            <button type="button" class="btn btn-whatsapp btn-block" id="wa-share-invoice-btn" style="border-radius:var(--radius-input);">
-              ${ICONS.whatsapp} Share via WhatsApp
-            </button>
-          </div>
-        `,
-        onMount(modalEl) {
-          modalEl.querySelector('#copy-invoice-summary-btn').addEventListener('click', () => {
-            try {
-              navigator.clipboard.writeText(shareText);
-            } catch (e) {
-              // Fallback
-            }
-            Modal.close();
-            showToast(`Invoice ${invoice.id} summary copied to clipboard.`);
-          });
-          modalEl.querySelector('#wa-share-invoice-btn').addEventListener('click', () => {
-            Modal.close();
-            showToast(`Shared Invoice ${invoice.id} with ${invoice.customerName} on WhatsApp.`);
-          });
-        }
-      });
-    });
-  }
-
-  // Print Invoice button using browser print
-  const printBtn = container.querySelector('#print-invoice-btn');
-  if (printBtn) {
-    printBtn.addEventListener('click', () => {
-      window.print();
-    });
-  }
-
-  // Add Charge item option in top-right menu
-  const moreBtn = container.querySelector('#bill-more-actions-btn');
-  if (moreBtn) {
-    moreBtn.addEventListener('click', () => {
-      Modal.open({
-        title: `Add Line Item to ${invoice.id}`,
-        bodyHtml: `
-          <form id="add-charge-form">
-            <div class="form-group">
-              <label class="form-label" for="new-charge-desc">Service / Part Description <span class="required">*</span></label>
-              <input type="text" id="new-charge-desc" class="form-input" placeholder="e.g. Air filter replacement" required />
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="new-charge-amt">Amount (₹) <span class="required">*</span></label>
-              <input type="number" id="new-charge-amt" class="form-input" min="1" value="450" required />
-            </div>
-            <button type="submit" class="btn btn-primary btn-block">Add Charge to Bill</button>
-          </form>
-        `,
-        onMount(modalEl) {
-          modalEl.querySelector('#add-charge-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            const description = modalEl.querySelector('#new-charge-desc').value.trim();
-            const amount = Number(modalEl.querySelector('#new-charge-amt').value) || 0;
-            if (!description || amount <= 0) return;
-            invoice.items.push({ description, amount });
-            AppState.notify();
-            Modal.close();
-            showToast('Payment details updated successfully');
-            renderBillDetailsPage(container, { invoiceId: invoice.id });
-          });
-        }
+  // Edit Bill button -> opens existing Generate Bill interface in Edit Mode
+  const editBillBtn = container.querySelector('#bill-edit-btn');
+  if (editBillBtn) {
+    editBillBtn.addEventListener('click', () => {
+      if (AppState.user && AppState.user.role === 'staff') return;
+      Router.navigate('create-bill', {
+        editInvoiceId: invoice.id,
+        returnTo: 'bill-details'
       });
     });
   }
@@ -19799,39 +20388,49 @@ function bindWhatsAppIntegrationEvents(container) {
 // ==========================================================================
 // GarageFlow — Invoice & Payment Settings Screen (1000204008.jpg / dc99c567.jpeg)
 // ==========================================================================
-function openQrCropModal(rawImageUrl, onCropped) {
+function openAssetCropModal(rawImageUrl, options = {}, onCropped) {
+  const {
+    title = 'Crop Image',
+    subtitle = 'Center the image inside the square frame using zoom and pan controls.',
+    applyLabel = 'Apply Crop',
+    preserveTransparency = false,
+    fitMode = 'contain',
+    minZoom = 0.6,
+    maxZoom = 3
+  } = options;
+
   let zoom = 1;
   let offsetX = 0;
   let offsetY = 0;
 
   Modal.open({
-    title: 'Crop UPI QR Code from Screenshot',
+    title,
     centered: true,
     bodyHtml: `
       <div>
         <p style="font-size:12px; color:var(--color-muted); margin-bottom:10px;">
-          Center the QR code inside the square frame so invoices display only the scannable QR code.
+          ${escapeHtml(subtitle)}
         </p>
         <div style="display:flex; justify-content:center; margin-bottom:12px;">
-          <canvas id="qr-crop-canvas" width="220" height="220" style="border:2px dashed #2563eb; border-radius:12px; background:#f8fafc;"></canvas>
+          <canvas id="qr-crop-canvas" width="220" height="220" style="border:2px dashed #2563eb; border-radius:12px; background:${preserveTransparency ? 'repeating-conic-gradient(#f1f5f9 0% 25%, #ffffff 0% 50%) 50% / 16px 16px' : '#f8fafc'};"></canvas>
         </div>
         <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:14px; font-size:12px;">
-          <label style="display:flex; justify-content:space-between;">
+          <label style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
             <span>Zoom</span>
-            <input type="range" id="qr-crop-zoom" min="1" max="3" step="0.05" value="1" style="width:150px;" />
+            <input type="range" id="qr-crop-zoom" min="${minZoom}" max="${maxZoom}" step="0.05" value="1" style="width:150px;" />
           </label>
-          <label style="display:flex; justify-content:space-between;">
+          <label style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
             <span>Horizontal Pan</span>
             <input type="range" id="qr-crop-pan-x" min="-150" max="150" step="2" value="0" style="width:150px;" />
           </label>
-          <label style="display:flex; justify-content:space-between;">
+          <label style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
             <span>Vertical Pan</span>
             <input type="range" id="qr-crop-pan-y" min="-150" max="150" step="2" value="0" style="width:150px;" />
           </label>
         </div>
         <div style="display:grid; grid-template-columns:1fr 1.2fr; gap:8px;">
           <button type="button" class="btn btn-neutral-outline" data-modal-close>Cancel</button>
-          <button type="button" class="btn btn-primary" id="apply-qr-crop-btn">Apply QR Crop</button>
+          <button type="button" class="btn btn-primary" id="apply-qr-crop-btn">${escapeHtml(applyLabel)}</button>
         </div>
       </div>
     `,
@@ -19840,15 +20439,27 @@ function openQrCropModal(rawImageUrl, onCropped) {
       const ctx = canvas.getContext('2d');
       const img = new Image();
       img.onload = () => {
-        function redraw() {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * zoom;
+        function renderToContext(targetCtx, w, h, ratioScale) {
+          if (preserveTransparency) {
+            targetCtx.clearRect(0, 0, w, h);
+          } else {
+            targetCtx.fillStyle = '#ffffff';
+            targetCtx.fillRect(0, 0, w, h);
+          }
+          const baseScale =
+            fitMode === 'cover'
+              ? Math.max(w / img.width, h / img.height)
+              : Math.min(w / img.width, h / img.height);
+          const scale = baseScale * zoom;
           const dw = img.width * scale;
           const dh = img.height * scale;
-          const dx = (canvas.width - dw) / 2 + offsetX;
-          const dy = (canvas.height - dh) / 2 + offsetY;
-          ctx.drawImage(img, dx, dy, dw, dh);
+          const dx = (w - dw) / 2 + offsetX * ratioScale;
+          const dy = (h - dh) / 2 + offsetY * ratioScale;
+          targetCtx.drawImage(img, dx, dy, dw, dh);
+        }
+
+        function redraw() {
+          renderToContext(ctx, canvas.width, canvas.height, 1);
         }
         redraw();
 
@@ -19865,7 +20476,12 @@ function openQrCropModal(rawImageUrl, onCropped) {
           redraw();
         });
         modalEl.querySelector('#apply-qr-crop-btn').addEventListener('click', () => {
-          const croppedUrl = canvas.toDataURL('image/png');
+          const exportCanvas = document.createElement('canvas');
+          exportCanvas.width = 440;
+          exportCanvas.height = 440;
+          const exportCtx = exportCanvas.getContext('2d');
+          renderToContext(exportCtx, 440, 440, 2);
+          const croppedUrl = exportCanvas.toDataURL('image/png');
           Modal.close();
           if (typeof onCropped === 'function') {
             onCropped(croppedUrl);
@@ -19875,6 +20491,22 @@ function openQrCropModal(rawImageUrl, onCropped) {
       img.src = rawImageUrl;
     }
   });
+}
+
+function openQrCropModal(rawImageUrl, onCropped) {
+  openAssetCropModal(
+    rawImageUrl,
+    {
+      title: 'Crop UPI QR Code from Screenshot',
+      subtitle: 'Center the QR code inside the square frame so invoices display only the scannable QR code.',
+      applyLabel: 'Apply QR Crop',
+      preserveTransparency: false,
+      fitMode: 'cover',
+      minZoom: 1,
+      maxZoom: 3
+    },
+    onCropped
+  );
 }
 
 function renderInvoiceSettingsPage(container) {
@@ -19897,95 +20529,76 @@ function renderInvoiceSettingsPage(container) {
         </div>
       </header>
 
-      <!-- A. BRANDING & SIGNATURE -->
-      <div class="settings-section-label">BRANDING &amp; SIGNATURE</div>
+      <!-- A. GARAGE LOGO -->
+      <div class="settings-section-label">GARAGE LOGO</div>
       <section class="card">
-        <div class="form-row-2" style="align-items:stretch;">
-          <!-- Business Logo Card -->
-          <div style="border:1px solid var(--color-border-subtle); border-radius:14px; padding:12px; display:flex; flex-direction:column; justify-content:space-between; gap:10px;">
-            <div>
-              <div style="font-size:13px; font-weight:800; color:var(--color-text); margin-bottom:6px;">Business Logo</div>
-              <div style="height:72px; border:1px dashed #cbd5e1; border-radius:10px; background:#f8fafc; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:8px;">
-                ${
-                  logoUrl
-                    ? `<img src="${logoUrl}" alt="Uploaded Business Logo" style="max-height:62px; max-width:90%; object-fit:contain;" />`
-                    : `<span style="color:var(--color-primary); display:inline-flex; flex-direction:column; align-items:center; font-size:10px; font-weight:700;">${ICONS.storefront}<span>Default Logo</span></span>`
-                }
-              </div>
-              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
-                <label for="inv-logo-upload-input" class="btn btn-outline btn-pill" style="padding:4px 10px; font-size:11px; cursor:pointer; flex:1;">
-                  ${logoUrl ? 'Change' : 'Upload Logo'}
-                </label>
-                <input type="file" id="inv-logo-upload-input" accept="image/png,image/jpeg,image/*" style="display:none;" />
-                ${
-                  logoUrl
-                    ? `<button type="button" class="btn btn-neutral-outline btn-pill" id="inv-logo-remove-btn" style="padding:4px 10px; font-size:11px; color:var(--color-danger);">Remove</button>`
-                    : ''
-                }
-              </div>
-            </div>
-            <div>
-              <div style="font-size:10px; font-weight:700; color:var(--color-muted); margin-bottom:4px;">Display Size</div>
-              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:4px;">
-                ${['Small', 'Medium', 'Large']
-                  .map(
-                    (sz) => `
-                  <button
-                    type="button"
-                    data-logo-size="${sz}"
-                    style="padding:4px; font-size:11px; font-weight:700; border-radius:8px; border:1px solid ${cfg.logoSize === sz ? '#2563eb' : '#e2e8f0'}; background:${cfg.logoSize === sz ? '#eff6ff' : '#ffffff'}; color:${cfg.logoSize === sz ? '#1d4ed8' : '#475569'};"
-                  >${sz}</button>
-                `
-                  )
-                  .join('')}
-              </div>
-            </div>
+        <div style="display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap;">
+          <div style="width:96px; height:96px; border:1px solid #cbd5e1; border-radius:12px; background:#ffffff; display:flex; align-items:center; justify-content:center; padding:8px; flex-shrink:0; overflow:hidden;">
+            ${
+              logoUrl
+                ? `<img src="${logoUrl}" alt="Uploaded Garage Logo" style="width:100%; height:100%; object-fit:contain;" />`
+                : `<span style="color:var(--color-primary); display:inline-flex; flex-direction:column; align-items:center; gap:4px; font-size:10px; font-weight:700; text-align:center;">${ICONS.storefront}<span>GarageFlow Default</span></span>`
+            }
           </div>
-
-          <!-- Digital Signature Card -->
-          <div style="border:1px solid var(--color-border-subtle); border-radius:14px; padding:12px; display:flex; flex-direction:column; justify-content:space-between; gap:10px;">
-            <div>
-              <div style="font-size:13px; font-weight:800; color:var(--color-text); margin-bottom:6px;">Digital Signature</div>
-              <div style="height:72px; border:1px dashed #cbd5e1; border-radius:10px; background:#f8fafc; display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:8px;">
-                ${
-                  cfg.signatureDataUrl
-                    ? `<img src="${cfg.signatureDataUrl}" alt="Uploaded Signature" style="max-height:58px; max-width:90%; object-fit:contain;" />`
-                    : `<span style="font-family:Georgia,serif; font-style:italic; font-weight:700; color:#1e3a8a; font-size:15px;">${escapeHtml(bp.ownerName || 'R. Patil')}</span>`
-                }
-              </div>
-              <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
-                <label for="inv-sig-upload-input" class="btn btn-outline btn-pill" style="padding:4px 10px; font-size:11px; cursor:pointer; flex:1;">
-                  ${cfg.signatureDataUrl ? 'Change' : 'Upload Signature'}
-                </label>
-                <input type="file" id="inv-sig-upload-input" accept="image/png,image/jpeg,image/*" style="display:none;" />
-                ${
-                  cfg.signatureDataUrl
-                    ? `<button type="button" class="btn btn-neutral-outline btn-pill" id="inv-sig-remove-btn" style="padding:4px 10px; font-size:11px; color:var(--color-danger);">Remove</button>`
-                    : ''
-                }
-              </div>
-            </div>
-            <div>
-              <div style="font-size:10px; font-weight:700; color:var(--color-muted); margin-bottom:4px;">Display Size</div>
-              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:4px;">
-                ${['Small', 'Medium', 'Large']
-                  .map(
-                    (sz) => `
-                  <button
-                    type="button"
-                    data-sig-size="${sz}"
-                    style="padding:4px; font-size:11px; font-weight:700; border-radius:8px; border:1px solid ${cfg.signatureSize === sz ? '#2563eb' : '#e2e8f0'}; background:${cfg.signatureSize === sz ? '#eff6ff' : '#ffffff'}; color:${cfg.signatureSize === sz ? '#1d4ed8' : '#475569'};"
-                  >${sz}</button>
-                `
-                  )
-                  .join('')}
-              </div>
+          <div style="flex:1; min-width:190px;">
+            <div style="font-size:14px; font-weight:800; color:var(--color-text); margin-bottom:4px;">Garage Logo</div>
+            <p style="font-size:11px; color:var(--color-muted); margin-bottom:10px; line-height:1.45;">
+              Upload your garage logo and crop it to display on your invoices. Uses the official GarageFlow logo by default.
+            </p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <label for="inv-logo-upload-input" class="btn btn-primary btn-pill" style="padding:6px 14px; font-size:11.5px; cursor:pointer;">
+                ${logoUrl ? 'Change Logo' : 'Upload Logo'}
+              </label>
+              <input type="file" id="inv-logo-upload-input" accept="image/png,image/jpeg,image/*" style="display:none;" />
+              ${
+                logoUrl
+                  ? `<button type="button" class="btn btn-outline btn-pill" id="inv-logo-crop-btn" style="padding:6px 12px; font-size:11.5px;">Crop Logo</button>
+                     <button type="button" class="btn btn-neutral-outline btn-pill" id="inv-logo-remove-btn" style="padding:6px 12px; font-size:11.5px; color:var(--color-danger);">Remove Logo</button>`
+                  : ''
+              }
             </div>
           </div>
         </div>
       </section>
 
-      <!-- B. PAYMENT QR CODE -->
+      <!-- B. OWNER SIGNATURE -->
+      <div class="settings-section-label">OWNER SIGNATURE</div>
+      <section class="card">
+        <div style="display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap;">
+          <div style="width:96px; height:96px; border:1px solid #cbd5e1; border-radius:12px; background:#ffffff; display:flex; align-items:center; justify-content:center; padding:8px; flex-shrink:0; overflow:hidden;">
+            ${
+              cfg.signatureDataUrl
+                ? `<img src="${cfg.signatureDataUrl}" alt="Uploaded Owner Signature" style="width:100%; height:100%; object-fit:contain;" />`
+                : `<div style="display:flex; flex-direction:column; align-items:center; gap:4px; text-align:center;">
+                    <svg width="68" height="32" viewBox="0 0 180 76" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M44 10 C22 14, 7 40, 12 58 C16 68, 32 54, 48 34 C58 21, 64 11, 61 13 C55 24, 44 49, 44 61 C44 65, 53 50, 66 36 C75 26, 82 14, 83 12 C79 25, 72 48, 69 65 C68 70, 74 58, 84 44 C91 34, 98 28, 100 32 C101 36, 95 47, 97 50 C100 53, 108 42, 114 40 C118 39, 117 47, 121 48 C125 48, 132 42, 139 42 C148 42, 160 40, 173 39" stroke="#0F2C74" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <span style="font-size:9.5px; font-weight:700; color:var(--color-muted);">Default</span>
+                  </div>`
+            }
+          </div>
+          <div style="flex:1; min-width:190px;">
+            <div style="font-size:14px; font-weight:800; color:var(--color-text); margin-bottom:4px;">Owner Signature</div>
+            <p style="font-size:11px; color:var(--color-muted); margin-bottom:10px; line-height:1.45;">
+              Upload your signature image (transparent PNG recommended) and crop it to appear in the Authorised Signatory section of invoices.
+            </p>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <label for="inv-sig-upload-input" class="btn btn-primary btn-pill" style="padding:6px 14px; font-size:11.5px; cursor:pointer;">
+                ${cfg.signatureDataUrl ? 'Change Signature' : 'Upload Signature'}
+              </label>
+              <input type="file" id="inv-sig-upload-input" accept="image/png,image/jpeg,image/*" style="display:none;" />
+              ${
+                cfg.signatureDataUrl
+                  ? `<button type="button" class="btn btn-outline btn-pill" id="inv-sig-crop-btn" style="padding:6px 12px; font-size:11.5px;">Crop Signature</button>
+                     <button type="button" class="btn btn-neutral-outline btn-pill" id="inv-sig-remove-btn" style="padding:6px 12px; font-size:11.5px; color:var(--color-danger);">Remove Signature</button>`
+                  : ''
+              }
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- C. PAYMENT QR CODE -->
       <div class="settings-section-label">PAYMENT QR CODE</div>
       <section class="card">
         <div style="display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap;">
@@ -19998,38 +20611,23 @@ function renderInvoiceSettingsPage(container) {
           </div>
           <div style="flex:1; min-width:190px;">
             <div style="font-size:14px; font-weight:800; color:var(--color-text); margin-bottom:4px;">UPI Payment QR Code</div>
-            <p style="font-size:11px; color:var(--color-muted); margin-bottom:8px;">
+            <p style="font-size:11px; color:var(--color-muted); margin-bottom:10px; line-height:1.45;">
               Upload your UPI QR image or a payment app screenshot and crop it to display on Payment Pending invoices.
             </p>
-            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
-              <label for="inv-qr-upload-input" class="btn btn-primary btn-pill" style="padding:5px 12px; font-size:11px; cursor:pointer;">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+              <label for="inv-qr-upload-input" class="btn btn-primary btn-pill" style="padding:6px 14px; font-size:11.5px; cursor:pointer;">
                 ${cfg.qrCodeDataUrl ? 'Change QR' : 'Upload QR'}
               </label>
               <input type="file" id="inv-qr-upload-input" accept="image/png,image/jpeg,image/*" style="display:none;" />
-              <button type="button" class="btn btn-outline btn-pill" id="inv-qr-sample-verify-btn" style="padding:5px 10px; font-size:11px;">
+              <button type="button" class="btn btn-outline btn-pill" id="inv-qr-sample-verify-btn" style="padding:6px 12px; font-size:11.5px;">
                 Use Sample UPI QR
               </button>
               ${
                 cfg.qrCodeDataUrl
-                  ? `<button type="button" class="btn btn-outline btn-pill" id="inv-qr-crop-btn" style="padding:5px 10px; font-size:11px;">Crop QR</button>
-                     <button type="button" class="btn btn-neutral-outline btn-pill" id="inv-qr-remove-btn" style="padding:5px 10px; font-size:11px; color:var(--color-danger);">Remove QR</button>`
+                  ? `<button type="button" class="btn btn-outline btn-pill" id="inv-qr-crop-btn" style="padding:6px 12px; font-size:11.5px;">Crop QR</button>
+                     <button type="button" class="btn btn-neutral-outline btn-pill" id="inv-qr-remove-btn" style="padding:6px 12px; font-size:11.5px; color:var(--color-danger);">Remove QR</button>`
                   : ''
               }
-            </div>
-
-            <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-              <span style="font-size:10px; font-weight:700; color:var(--color-muted);">QR Size:</span>
-              ${['Small', 'Medium', 'Large']
-                .map(
-                  (sz) => `
-                <button
-                  type="button"
-                  data-qr-size="${sz}"
-                  style="padding:3px 9px; font-size:11px; font-weight:700; border-radius:8px; border:1px solid ${cfg.qrSize === sz ? '#2563eb' : '#e2e8f0'}; background:${cfg.qrSize === sz ? '#eff6ff' : '#ffffff'}; color:${cfg.qrSize === sz ? '#1d4ed8' : '#475569'};"
-                >${sz}</button>
-              `
-                )
-                .join('')}
             </div>
 
             <div
@@ -20220,20 +20818,41 @@ function bindInvoiceSettingsEvents(container) {
     });
   }
 
+  const cropLogoBtn = container.querySelector('#inv-logo-crop-btn');
+  if (cropLogoBtn) {
+    cropLogoBtn.addEventListener('click', () => {
+      const currentLogo =
+        (AppState.data.invoiceSettings && AppState.data.invoiceSettings.logoDataUrl) ||
+        (AppState.data.businessProfile && AppState.data.businessProfile.logoDataUrl);
+      if (!currentLogo) return;
+      openAssetCropModal(
+        currentLogo,
+        {
+          title: 'Crop Garage Logo',
+          subtitle: 'Adjust zoom and pan to center your garage logo inside the square frame.',
+          applyLabel: 'Apply Logo Crop',
+          preserveTransparency: true,
+          fitMode: 'contain',
+          minZoom: 0.6,
+          maxZoom: 3
+        },
+        (croppedLogoUrl) => {
+          AppState.updateInvoiceSettings({ logoDataUrl: croppedLogoUrl });
+          showToast('Cropped garage logo saved');
+          renderInvoiceSettingsPage(container);
+        }
+      );
+    });
+  }
+
   const removeLogoBtn = container.querySelector('#inv-logo-remove-btn');
   if (removeLogoBtn) {
     removeLogoBtn.addEventListener('click', () => {
       AppState.updateInvoiceSettings({ logoDataUrl: null });
+      showToast('Garage logo removed. Default GarageFlow logo will be used.');
       renderInvoiceSettingsPage(container);
     });
   }
-
-  container.querySelectorAll('[data-logo-size]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      AppState.updateInvoiceSettings({ logoSize: btn.getAttribute('data-logo-size') });
-      renderInvoiceSettingsPage(container);
-    });
-  });
 
   // Upload Signature
   const sigInput = container.querySelector('#inv-sig-upload-input');
@@ -20244,10 +20863,35 @@ function bindInvoiceSettingsEvents(container) {
       const reader = new FileReader();
       reader.onload = () => {
         AppState.updateInvoiceSettings({ signatureDataUrl: reader.result });
-        showToast('Digital signature updated successfully');
+        showToast('Owner signature updated successfully');
         renderInvoiceSettingsPage(container);
       };
       reader.readAsDataURL(file);
+    });
+  }
+
+  const cropSigBtn = container.querySelector('#inv-sig-crop-btn');
+  if (cropSigBtn) {
+    cropSigBtn.addEventListener('click', () => {
+      const currentSig = AppState.data.invoiceSettings && AppState.data.invoiceSettings.signatureDataUrl;
+      if (!currentSig) return;
+      openAssetCropModal(
+        currentSig,
+        {
+          title: 'Crop Owner Signature',
+          subtitle: 'Adjust zoom and pan to frame your signature cleanly while preserving transparency.',
+          applyLabel: 'Apply Signature Crop',
+          preserveTransparency: true,
+          fitMode: 'contain',
+          minZoom: 0.6,
+          maxZoom: 3
+        },
+        (croppedSigUrl) => {
+          AppState.updateInvoiceSettings({ signatureDataUrl: croppedSigUrl });
+          showToast('Cropped owner signature saved');
+          renderInvoiceSettingsPage(container);
+        }
+      );
     });
   }
 
@@ -20255,16 +20899,10 @@ function bindInvoiceSettingsEvents(container) {
   if (removeSigBtn) {
     removeSigBtn.addEventListener('click', () => {
       AppState.updateInvoiceSettings({ signatureDataUrl: null });
+      showToast('Owner signature removed. Default signature will be used.');
       renderInvoiceSettingsPage(container);
     });
   }
-
-  container.querySelectorAll('[data-sig-size]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      AppState.updateInvoiceSettings({ signatureSize: btn.getAttribute('data-sig-size') });
-      renderInvoiceSettingsPage(container);
-    });
-  });
 
   // Upload & Verify Payment QR Code
   const qrInput = container.querySelector('#inv-qr-upload-input');
@@ -20339,12 +20977,7 @@ function bindInvoiceSettingsEvents(container) {
     });
   }
 
-  container.querySelectorAll('[data-qr-size]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      AppState.updateInvoiceSettings({ qrSize: btn.getAttribute('data-qr-size') });
-      renderInvoiceSettingsPage(container);
-    });
-  });
+
 
   // Invoice Number & Date controls
   container.querySelector('#toggle-auto-inv-no').addEventListener('change', (e) => {
