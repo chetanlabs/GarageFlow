@@ -11011,7 +11011,7 @@ const Router = {
 
   navigate(routeName, params = {}) {
     // Guard protected routes when not signed in (allow 'login' and 'staff-account-setup')
-    if (!AppState.user && routeName !== 'login' && routeName !== 'staff-account-setup' && routeName !== 'owner-account-setup') {
+    if (!AppState.user && routeName !== 'login' && routeName !== 'staff-account-setup' && routeName !== 'owner-account-setup' && routeName !== 'reset-password') {
       if (SUPERADMIN_ROUTES.includes(routeName)) {
         showToast('Access denied: Superadmin authentication required.', 'danger');
       }
@@ -11055,6 +11055,8 @@ const Router = {
   renderCurrent() {
     let activeRoute = AppState.user
       ? AppState.currentRoute
+      : AppState.currentRoute === 'reset-password'
+      ? 'reset-password'
       : AppState.currentRoute === 'owner-account-setup'
       ? 'owner-account-setup'
       : AppState.currentRoute === 'staff-account-setup'
@@ -13038,34 +13040,84 @@ function bindLoginEvents(container) {
     });
   }
 
-  // Forgot password modal
+  // Forgot password modal (live Supabase Auth password recovery for Owner & Staff)
   const forgotBtn = container.querySelector('#forgot-password-btn');
   if (forgotBtn) {
     forgotBtn.addEventListener('click', () => {
       Modal.open({
-        title: 'Forgot Password',
+        title: 'Reset Password',
         bodyHtml: `
           <p style="font-size:var(--text-sm); color:var(--color-muted); margin-bottom:14px;">
-            Enter your registered email address or mobile number to request a password reset from your garage administrator.
+            Enter your registered Gmail address. We will send you a secure GarageFlow link to create a new password.
           </p>
           <div class="form-group">
-            <label class="form-label" for="reset-email-input">Email or phone number</label>
+            <label class="form-label" for="reset-email-input">Registered Email Address</label>
             <input
-              type="text"
+              type="email"
               id="reset-email-input"
               class="form-input"
               value="${escapeHtml(emailInput.value)}"
-              placeholder="Enter your email or phone"
+              placeholder="e.g. owner@gmail.com"
+              autocomplete="email"
             />
           </div>
-          <button type="button" class="btn btn-primary btn-block" id="send-reset-demo-btn">
-            Request Password Reset
+          <div id="reset-email-error" class="form-error-msg" style="margin-bottom:12px;" hidden></div>
+          <button type="button" class="btn btn-primary btn-block" id="send-reset-email-btn">
+            Send Password Reset Link
           </button>
         `,
         onMount(modalEl) {
-          modalEl.querySelector('#send-reset-demo-btn').addEventListener('click', () => {
-            Modal.close();
-            showToast('Password reset request sent to your registered contact.');
+          const inputEl = modalEl.querySelector('#reset-email-input');
+          const errEl = modalEl.querySelector('#reset-email-error');
+          const sendBtn = modalEl.querySelector('#send-reset-email-btn');
+
+          sendBtn.addEventListener('click', async () => {
+            const cleanEmail = String(inputEl.value || '').trim().toLowerCase();
+            errEl.hidden = true;
+            errEl.textContent = '';
+
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+              errEl.textContent = 'Please enter a valid registered email address.';
+              errEl.hidden = false;
+              inputEl.focus();
+              return;
+            }
+
+            const client = SuperadminService.getActiveClient();
+            if (!client || !client.auth) {
+              errEl.textContent = 'Unable to connect to authentication service. Check your internet connection.';
+              errEl.hidden = false;
+              return;
+            }
+
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending Reset Link...';
+
+            try {
+              const redirectTo =
+                typeof window !== 'undefined' && window.location && /^https?:/.test(window.location.protocol)
+                  ? `${window.location.origin}${window.location.pathname}?reset_password=1`
+                  : undefined;
+
+              const { error } = await client.auth.resetPasswordForEmail(cleanEmail, {
+                redirectTo
+              });
+
+              if (error) {
+                errEl.textContent = error.message || 'Could not send password reset email. Please try again.';
+                errEl.hidden = false;
+                return;
+              }
+
+              Modal.close();
+              showToast(`Password reset link sent to ${cleanEmail}. Check your Gmail inbox or spam.`, 'success');
+            } catch (err) {
+              errEl.textContent = err && err.message ? err.message : 'Network error while sending reset link.';
+              errEl.hidden = false;
+            } finally {
+              sendBtn.disabled = false;
+              sendBtn.textContent = 'Send Password Reset Link';
+            }
           });
         }
       });
@@ -22917,7 +22969,7 @@ function renderSuperadminNotificationsPage(container) {
 }
 
 function mountShell(pageRenderFn, params) {
-  if (AppState.currentRoute === 'staff-account-setup' || AppState.currentRoute === 'owner-account-setup') {
+  if (AppState.currentRoute === 'staff-account-setup' || AppState.currentRoute === 'owner-account-setup' || AppState.currentRoute === 'reset-password') {
     appRoot.className = 'app-shell';
     appRoot.innerHTML = `<main class="app-main" id="screen-outlet" style="padding-bottom:32px;"></main>`;
     const outlet = document.getElementById('screen-outlet');
@@ -23205,6 +23257,235 @@ function renderOwnerAccountSetupPage(container) {
   initOwnerSetupSession();
 }
 
+
+function renderPasswordResetPage(container) {
+  container.innerHTML = `
+    <div class="sa-page-container" id="password-reset-screen" style="padding-top:28px;">
+      <section class="sa-card">
+        <div class="sa-card-header">
+          <div>
+            <div class="sa-eyebrow" style="margin-bottom:2px;">GARAGEFLOW ACCOUNT RECOVERY</div>
+            <h1 class="sa-card-title" style="font-size:1.35rem;">Reset Your Password</h1>
+            <p class="sa-card-desc">Choose a new password for your GarageFlow account.</p>
+          </div>
+        </div>
+
+        <div id="reset-pass-status-banner" class="sa-status-banner info">
+          Verifying your password reset link with Supabase...
+        </div>
+
+        <form id="reset-pass-form" novalidate hidden>
+          <div class="sa-field-group">
+            <label class="sa-field-label" for="reset-pass-email">Verified Account Email</label>
+            <div class="sa-input-wrap">
+              <span class="sa-input-icon">${ICONS.mail}</span>
+              <input
+                type="email"
+                id="reset-pass-email"
+                class="sa-input"
+                readonly
+                style="background:#EEF4FF; color:#102653; font-weight:700;"
+              />
+            </div>
+          </div>
+
+          <div class="sa-field-group">
+            <label class="sa-field-label" for="reset-pass-new">New Password</label>
+            <div class="sa-input-wrap">
+              <span class="sa-input-icon">${ICONS.lock}</span>
+              <input
+                type="password"
+                id="reset-pass-new"
+                class="sa-input"
+                style="padding-right:44px;"
+                placeholder="Minimum 8 characters"
+                autocomplete="new-password"
+                required
+              />
+              <button type="button" class="input-icon-right" id="reset-pass-toggle-new" aria-label="Show password">
+                ${ICONS.eye}
+              </button>
+            </div>
+          </div>
+
+          <div class="sa-field-group">
+            <label class="sa-field-label" for="reset-pass-confirm">Confirm New Password</label>
+            <div class="sa-input-wrap">
+              <span class="sa-input-icon">${ICONS.lock}</span>
+              <input
+                type="password"
+                id="reset-pass-confirm"
+                class="sa-input"
+                style="padding-right:44px;"
+                placeholder="Re-enter your new password"
+                autocomplete="new-password"
+                required
+              />
+              <button type="button" class="input-icon-right" id="reset-pass-toggle-confirm" aria-label="Show confirm password">
+                ${ICONS.eye}
+              </button>
+            </div>
+          </div>
+
+          <div id="reset-pass-error" class="form-error-msg" style="margin-bottom:10px;" hidden></div>
+
+          <button type="submit" id="reset-pass-submit-btn" class="sa-submit-btn">
+            <span>Update Password</span>
+          </button>
+        </form>
+
+        <div style="text-align:center; margin-top:16px;">
+          <button type="button" id="reset-pass-back-login-btn" class="login-forgot-link">
+            Return to GarageFlow Login
+          </button>
+        </div>
+      </section>
+    </div>
+  `;
+
+  const banner = container.querySelector('#reset-pass-status-banner');
+  const form = container.querySelector('#reset-pass-form');
+  const emailField = container.querySelector('#reset-pass-email');
+  const passField = container.querySelector('#reset-pass-new');
+  const confirmField = container.querySelector('#reset-pass-confirm');
+  const errorBox = container.querySelector('#reset-pass-error');
+  const submitBtn = container.querySelector('#reset-pass-submit-btn');
+
+  container.querySelector('#reset-pass-back-login-btn').addEventListener('click', () => {
+    if (window.history && window.history.replaceState) {
+      try {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } catch (e) {}
+    }
+    Router.navigate('login');
+  });
+
+  function bindEyeToggle(btnId, inputEl) {
+    const btn = container.querySelector(btnId);
+    if (!btn || !inputEl) return;
+    btn.addEventListener('click', () => {
+      const showing = inputEl.type === 'text';
+      inputEl.type = showing ? 'password' : 'text';
+      btn.innerHTML = showing ? ICONS.eye : ICONS.eyeOff;
+    });
+  }
+  bindEyeToggle('#reset-pass-toggle-new', passField);
+  bindEyeToggle('#reset-pass-toggle-confirm', confirmField);
+
+  async function initPasswordResetSession() {
+    const client = SuperadminService.getActiveClient();
+    if (!client || !client.auth) {
+      banner.className = 'sa-status-banner danger';
+      banner.textContent = 'Supabase client is unavailable. Please open this reset link with a live internet connection.';
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const errorDesc = params.get('error_description');
+      if (errorDesc) {
+        banner.className = 'sa-status-banner warning';
+        banner.textContent = decodeURIComponent(errorDesc.replace(/\+/g, ' '));
+        return;
+      }
+
+      const tokenHash = params.get('token_hash');
+      if (tokenHash && typeof client.auth.verifyOtp === 'function') {
+        const { error: otpErr } = await client.auth.verifyOtp({
+          token_hash: tokenHash,
+          type: 'recovery'
+        });
+        if (otpErr) {
+          banner.className = 'sa-status-banner warning';
+          banner.textContent = 'This password reset link has expired or was already used. Request a new one from Login.';
+          return;
+        }
+      } else {
+        const authCode = params.get('code');
+        if (authCode && typeof client.auth.exchangeCodeForSession === 'function') {
+          await client.auth.exchangeCodeForSession(authCode);
+        }
+      }
+
+      let { data: sessionData } = await client.auth.getSession();
+      if (!sessionData || !sessionData.session) {
+        await new Promise((r) => setTimeout(r, 450));
+        const retry = await client.auth.getSession();
+        sessionData = retry.data;
+      }
+
+      const activeUser = sessionData && sessionData.session ? sessionData.session.user : null;
+      if (!activeUser || !activeUser.email) {
+        banner.className = 'sa-status-banner warning';
+        banner.textContent = 'This password reset link has expired or was already used. Please request a fresh link from Login.';
+        return;
+      }
+
+      emailField.value = activeUser.email;
+      banner.className = 'sa-status-banner success';
+      banner.textContent = 'Reset link verified! Enter your new password below.';
+      form.hidden = false;
+    } catch (err) {
+      banner.className = 'sa-status-banner danger';
+      banner.textContent = `Could not verify reset link: ${err && err.message ? err.message : 'Invalid or expired token.'}`;
+    }
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.hidden = true;
+    errorBox.textContent = '';
+
+    const p1 = String(passField.value || '').trim();
+    const p2 = String(confirmField.value || '').trim();
+
+    if (p1.length < 8) {
+      errorBox.textContent = 'Password must be at least 8 characters long.';
+      errorBox.hidden = false;
+      return;
+    }
+    if (p1 !== p2) {
+      errorBox.textContent = 'Passwords do not match. Please re-enter them.';
+      errorBox.hidden = false;
+      return;
+    }
+
+    const client = SuperadminService.getActiveClient();
+    submitBtn.disabled = true;
+    submitBtn.querySelector('span').textContent = 'Updating Password...';
+
+    try {
+      const { error: updateErr } = await client.auth.updateUser({ password: p1 });
+      if (updateErr) {
+        throw new Error(updateErr.message || 'Unable to update password.');
+      }
+
+      await client.auth.signOut().catch(() => {});
+
+      if (window.history && window.history.replaceState) {
+        try {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (histErr) {}
+      }
+
+      draftEmail = emailField.value;
+      draftPassword = '';
+      postSetupSuccessMessage = 'Password updated successfully! Sign in below with your new password.';
+      showToast('Password updated successfully!', 'success');
+      Router.navigate('login');
+    } catch (err) {
+      errorBox.textContent = err && err.message ? err.message : 'Password reset failed.';
+      errorBox.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.querySelector('span').textContent = 'Update Password';
+    }
+  });
+
+  initPasswordResetSession();
+}
+
+Router.register('reset-password', (params) => mountShell(renderPasswordResetPage, params));
 Router.register('owner-account-setup', (params) => mountShell(renderOwnerAccountSetupPage, params));
 Router.register('superadmin-dashboard', (params) => mountShell(renderSuperadminDashboardPage, params));
 Router.register('superadmin-settings', (params) => mountShell(renderSuperadminSettingsPage, params));
@@ -23308,6 +23589,17 @@ function detectAndRouteInvitationLinkOnStartup() {
   }
   const searchParams = new URLSearchParams(window.location.search || '');
   const hashStr = window.location.hash || '';
+  const isPasswordResetCallback =
+    searchParams.get('reset_password') === '1' ||
+    searchParams.get('type') === 'recovery' ||
+    hashStr.includes('type=recovery') ||
+    hashStr.includes('reset-password');
+
+  if (isPasswordResetCallback) {
+    Router.navigate('reset-password');
+    return;
+  }
+
   const isOwnerSetupCallback =
     searchParams.get('setup_owner') === '1' ||
     hashStr.includes('owner-account-setup') ||
@@ -23323,11 +23615,9 @@ function detectAndRouteInvitationLinkOnStartup() {
   const isInviteCallback =
     searchParams.get('setup_staff') === '1' ||
     searchParams.get('type') === 'invite' ||
-    searchParams.get('type') === 'recovery' ||
     Boolean(searchParams.get('token_hash')) ||
     hashStr.includes('staff-account-setup') ||
-    hashStr.includes('type=invite') ||
-    hashStr.includes('type=recovery');
+    hashStr.includes('type=invite');
 
   if (isInviteCallback) {
     Router.navigate('staff-account-setup', {
