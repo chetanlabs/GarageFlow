@@ -8624,8 +8624,24 @@ const TenantDataService = {
 
   async syncJobStatus(job) {
     if (!this.isLiveTenantSession() || !job || !job.dbId) return;
+    if (AppState.isJobStatusLocked(job.id) && job.status !== 'Ready') {
+      return;
+    }
     const client = this.getClient();
     try {
+      // Backend integrity check: if an invoice already exists for this job_id, refuse backward status writes
+      if (job.status !== 'Ready') {
+        const { data: existingInv } = await client
+          .from('invoices')
+          .select('id')
+          .eq('garage_id', AppState.user.garageId)
+          .eq('job_id', job.dbId)
+          .limit(1);
+        if (Array.isArray(existingInv) && existingInv.length > 0) {
+          job.status = 'Ready';
+          return;
+        }
+      }
       await client.from('service_jobs').update({
         status: job.status,
         completed_at: job.status === 'Ready' ? new Date().toISOString() : null
@@ -10198,6 +10214,13 @@ const AppState = {
    * Updates service status among the 3 mutually exclusive statuses:
    * 'Received' | 'In-progress' | 'Ready'
    */
+  isJobStatusLocked(jobId) {
+    if (!jobId) return false;
+    const job = this.getJobById(jobId);
+    const existingInv = this.getInvoiceByJobId(jobId, job && job.invoiceId);
+    return Boolean(existingInv);
+  },
+
   updateJobStatus(jobId, rawStatus) {
     const job = this.getJobById(jobId);
     if (!job) return false;
@@ -10208,6 +10231,11 @@ const AppState = {
         : rawStatus === 'Ready'
         ? 'Ready'
         : 'Received';
+
+    if (this.isJobStatusLocked(job.id) && normalized !== 'Ready') {
+      job.status = 'Ready';
+      return false;
+    }
 
     job.status = normalized;
     if (normalized === 'Ready') {
@@ -14222,22 +14250,28 @@ function renderCustomerProfilePage(container, params = {}) {
       <section style="margin-bottom:18px;">
         <h2 class="section-title" style="margin-bottom:10px;">Current Service</h2>
 
-        <!-- Interactive 3-Status Switcher: Received | In-progress | Ready -->
+        <!-- Interactive 3-Status Switcher: Received | In-progress | Ready (Locked at Ready once billed) -->
+        ${(() => {
+          const isStatusLocked = AppState.isJobStatusLocked(currentJob.id);
+          return `
         <div class="segmented-status-control" role="group" aria-label="Change current service status">
           ${['Received', 'In-progress', 'Ready']
-            .map(
-              (st) => `
+            .map((st) => {
+              const isBackwardBlocked = isStatusLocked && st !== 'Ready';
+              return `
             <button
               type="button"
               class="segment-btn ${currentJob.status === st ? 'active' : ''}"
               data-set-job-status="${st}"
+              ${isBackwardBlocked ? 'disabled aria-disabled="true" title="Work status is locked at Ready after bill creation" style="opacity:0.45; cursor:not-allowed;"' : ''}
             >
               ${st}
             </button>
-          `
-            )
+          `;
+            })
             .join('')}
-        </div>
+        </div>`;
+        })()}
 
         <div class="card" style="margin-bottom:12px;">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
@@ -14495,7 +14529,11 @@ function bindCustomerProfileEvents(container, customer, currentJob) {
     btn.addEventListener('click', () => {
       if (!currentJob) return;
       const newStatus = btn.getAttribute('data-set-job-status');
-      AppState.updateJobStatus(currentJob.id, newStatus);
+      const updated = AppState.updateJobStatus(currentJob.id, newStatus);
+      if (!updated) {
+        showToast('Work status is locked at Ready because a bill has already been created.', 'warning');
+        return;
+      }
       showToast('Service status updated successfully');
       renderCustomerProfilePage(container, { customerId: customer.id });
     });
@@ -15308,15 +15346,19 @@ function renderServiceJobCard(job) {
           <span><strong>${escapeHtml(job.assignedStaffShort)}</strong> • ${escapeHtml(job.assignedStaffRole)}</span>
         </div>
 
-        <button
-          type="button"
-          class="btn btn-soft-blue"
-          style="padding:4px 10px; font-size:11px; min-height:28px; border-radius:999px;"
-          data-advance-job="${job.id}"
-          data-next-status="${nextStatus}"
-        >
-          Mark ${nextStatus}
-        </button>
+        ${
+          AppState.isJobStatusLocked(job.id)
+            ? `<span class="status-badge badge-paid" style="font-size:11px; padding:4px 10px;" title="Work status locked at Ready after bill creation">Billed • Ready</span>`
+            : `<button
+                type="button"
+                class="btn btn-soft-blue"
+                style="padding:4px 10px; font-size:11px; min-height:28px; border-radius:999px;"
+                data-advance-job="${job.id}"
+                data-next-status="${nextStatus}"
+              >
+                Mark ${nextStatus}
+              </button>`
+        }
       </div>
 
       <!-- 3-Step Progress Tracker -->
@@ -15418,7 +15460,11 @@ function bindServicesEvents(container) {
       e.stopPropagation();
       const jobId = btn.getAttribute('data-advance-job');
       const nextStatus = btn.getAttribute('data-next-status');
-      AppState.updateJobStatus(jobId, nextStatus);
+      const updated = AppState.updateJobStatus(jobId, nextStatus);
+      if (!updated) {
+        showToast('Work status is locked at Ready because a bill has already been created.', 'warning');
+        return;
+      }
       showToast('Service status updated successfully');
       renderServicesPage(container);
     });
