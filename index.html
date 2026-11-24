@@ -8320,6 +8320,28 @@ const TenantDataService = {
       };
     });
 
+    const ownerBilledJobIds = new Set(
+      (freshData.invoices || [])
+        .map((inv) => String(inv.jobId || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+    (freshData.jobs || []).forEach((j) => {
+      const hasInv =
+        Boolean(j.invoiceId) || ownerBilledJobIds.has(String(j.id || '').trim().toLowerCase());
+      if (hasInv) {
+        j.isBilledLocked = true;
+        if (j.status !== 'Ready') {
+          j.status = 'Ready';
+          j.expectedDelivery = 'Ready for pickup';
+          const cust = (freshData.customers || []).find((c) => c.id === j.customerId);
+          if (cust && Array.isArray(cust.serviceHistory)) {
+            const visit = cust.serviceHistory.find((v) => v.jobId === j.id);
+            if (visit) visit.status = 'Ready';
+          }
+        }
+      }
+    });
+
     return { ok: true, garageId, garageRow, data: freshData };
   },
 
@@ -8335,14 +8357,20 @@ const TenantDataService = {
     }
     const garageId = staffRow.garage_id;
 
-    const [garageRes, peerStaffRes, custRes, vehRes, jobsRes, sjsRes] = await Promise.all([
+    const [garageRes, peerStaffRes, custRes, vehRes, jobsRes, sjsRes, billedRpcRes] = await Promise.all([
       client.from('staff_garage_overview').select('*').eq('garage_id', garageId).maybeSingle(),
       client.from('staff_directory_view').select('*').eq('garage_id', garageId),
       client.from('customers').select('*').eq('garage_id', garageId).order('created_at', { ascending: false }),
       client.from('vehicles').select('*').eq('garage_id', garageId).order('created_at', { ascending: true }),
       client.from('service_jobs').select('*').eq('garage_id', garageId).order('created_at', { ascending: false }),
-      client.from('service_job_staff').select('*').eq('garage_id', garageId)
+      client.from('service_job_staff').select('*').eq('garage_id', garageId),
+      client.rpc('get_billed_job_ids', { p_garage_id: garageId }).then((r) => r).catch(() => ({ data: [] }))
     ]);
+    const billedJobDbIds = new Set(
+      (billedRpcRes && Array.isArray(billedRpcRes.data) ? billedRpcRes.data : [])
+        .map((r) => r && r.job_id)
+        .filter(Boolean)
+    );
 
     const gOverview = (garageRes && garageRes.data) ? garageRes.data : {};
     const freshData = this.createEmptyTenantData(
@@ -8500,7 +8528,8 @@ const TenantDataService = {
         receivedDate: createdShort,
         elapsedTime: createdShort || 'Recent',
         expectedDelivery: j.status === 'Ready' ? 'Ready for pickup' : 'Scheduled',
-        invoiceId: null
+        invoiceId: null,
+        isBilledLocked: billedJobDbIds.has(j.id)
       };
 
       if (cust) {
@@ -8523,6 +8552,18 @@ const TenantDataService = {
     });
     freshData.tenant.nextJobSeq = Math.max(maxJobNum + 1, 1001);
     freshData.invoices = [];
+
+    (freshData.jobs || []).forEach((j) => {
+      if (j.isBilledLocked && j.status !== 'Ready') {
+        j.status = 'Ready';
+        j.expectedDelivery = 'Ready for pickup';
+        const cust = (freshData.customers || []).find((c) => c.id === j.customerId);
+        if (cust && Array.isArray(cust.serviceHistory)) {
+          const visit = cust.serviceHistory.find((v) => v.jobId === j.id);
+          if (visit) visit.status = 'Ready';
+        }
+      }
+    });
 
     return { ok: true, garageId, staffCode: myCode, data: freshData };
   },
@@ -8629,23 +8670,52 @@ const TenantDataService = {
     }
     const client = this.getClient();
     try {
-      // Backend integrity check: if an invoice already exists for this job_id, refuse backward status writes
+      // Backend integrity check (works for both Owner and Staff via non-financial RPC + Owner invoices check)
       if (job.status !== 'Ready') {
-        const { data: existingInv } = await client
-          .from('invoices')
-          .select('id')
-          .eq('garage_id', AppState.user.garageId)
-          .eq('job_id', job.dbId)
-          .limit(1);
-        if (Array.isArray(existingInv) && existingInv.length > 0) {
+        let isBilledInDb = false;
+        try {
+          const { data: billedIds } = await client.rpc('get_billed_job_ids', {
+            p_garage_id: AppState.user.garageId
+          });
+          if (Array.isArray(billedIds) && billedIds.some((r) => r && r.job_id === job.dbId)) {
+            isBilledInDb = true;
+          }
+        } catch (rpcErr) {}
+        if (!isBilledInDb && (!AppState.user || AppState.user.role === 'admin')) {
+          const { data: existingInv } = await client
+            .from('invoices')
+            .select('id')
+            .eq('garage_id', AppState.user.garageId)
+            .eq('job_id', job.dbId)
+            .limit(1);
+          if (Array.isArray(existingInv) && existingInv.length > 0) {
+            isBilledInDb = true;
+          }
+        }
+        if (isBilledInDb) {
+          job.isBilledLocked = true;
           job.status = 'Ready';
+          job.expectedDelivery = 'Ready for pickup';
+          AppState.notify();
+          showToast('Work status is locked at Ready because a bill has already been created.', 'warning');
           return;
         }
       }
-      await client.from('service_jobs').update({
+      const { error } = await client.from('service_jobs').update({
         status: job.status,
         completed_at: job.status === 'Ready' ? new Date().toISOString() : null
       }).eq('id', job.dbId).eq('garage_id', AppState.user.garageId);
+      if (error) {
+        if (String(error.message || '').toLowerCase().includes('locked at ready')) {
+          job.isBilledLocked = true;
+          job.status = 'Ready';
+          job.expectedDelivery = 'Ready for pickup';
+          AppState.notify();
+          showToast('Work status is locked at Ready because a bill has already been created.', 'warning');
+          return;
+        }
+        showToast('Warning: Could not update job status in Supabase.', 'warning');
+      }
     } catch (e) {
       showToast('Warning: Could not update job status in Supabase.', 'warning');
     }
@@ -10217,6 +10287,7 @@ const AppState = {
   isJobStatusLocked(jobId) {
     if (!jobId) return false;
     const job = this.getJobById(jobId);
+    if (job && job.isBilledLocked) return true;
     const existingInv = this.getInvoiceByJobId(jobId, job && job.invoiceId);
     return Boolean(existingInv);
   },
@@ -10696,6 +10767,7 @@ const AppState = {
       const job = this.getJobById(newInvoice.jobId);
       if (job) {
         job.invoiceId = invoiceId;
+        job.isBilledLocked = true;
       }
       const visit = (customer.serviceHistory || []).find((v) => v.jobId === newInvoice.jobId);
       if (visit) {
