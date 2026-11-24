@@ -10900,7 +10900,6 @@ const STAFF_PERMITTED_ROUTES = [
 const SUPERADMIN_ROUTES = [
   'superadmin-dashboard',
   'superadmin-settings',
-  'superadmin-whatsapp',
   'superadmin-connectivity',
   'superadmin-notifications'
 ];
@@ -16934,8 +16933,18 @@ function renderCreateBillPage(container, params = {}) {
     const initialCustomer = params.customerId
       ? AppState.getCustomerById(params.customerId)
       : customers[0];
-    const initialVehicle = initialCustomer && initialCustomer.vehicles ? initialCustomer.vehicles[0] : null;
     const candidateJobId = params.jobId || '';
+    const linkedJob = candidateJobId ? AppState.getJobById(candidateJobId) : null;
+    const initialVehicle =
+      (linkedJob && linkedJob.vehicleId && initialCustomer && initialCustomer.vehicles
+        ? initialCustomer.vehicles.find((v) => v.id === linkedJob.vehicleId)
+        : null) ||
+      (initialCustomer && initialCustomer.vehicles ? initialCustomer.vehicles[0] : null);
+    const complaintDesc =
+      linkedJob && linkedJob.complaint ? String(linkedJob.complaint).trim() : '';
+    const initialItems = complaintDesc
+      ? [{ description: complaintDesc, qty: 1, rate: '' }]
+      : createDefaultItems();
 
     billDraft = {
       editInvoiceId: '',
@@ -16944,7 +16953,7 @@ function renderCreateBillPage(container, params = {}) {
       vehicleId: initialVehicle ? initialVehicle.id : null,
       date: parseSelectedDateMeta(getLocalTodayIso()).formattedShort,
       jobId: candidateJobId,
-      items: createDefaultItems(),
+      items: initialItems,
       discount: '',
       amountReceived: '',
       existingPaidAmount: 0,
@@ -17003,46 +17012,14 @@ function renderCreateBillPage(container, params = {}) {
       </header>
 
       <form id="create-bill-page-form" novalidate>
-        <!-- 1. Customer Details Card (Image 6) -->
+        <!-- 1. Customer Details Card -->
         <section class="card">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px;">
             <h2 class="section-title">
               <span style="color:var(--color-primary); display:inline-flex;">${ICONS.users}</span>
               <span>Customer Details</span>
             </h2>
-            ${
-              isEditMode
-                ? ''
-                : `<button
-                    type="button"
-                    id="bill-add-customer-btn"
-                    style="font-size:var(--text-xs); font-weight:700; color:var(--color-primary);"
-                  >
-                    + Add Customer
-                  </button>`
-            }
           </div>
-
-          ${
-            isEditMode
-              ? ''
-              : `<div class="form-group">
-                  <div class="input-wrapper">
-                    <span class="input-icon-left">${ICONS.search}</span>
-                    <select id="bill-customer-select" class="form-select" style="padding-left:2.5rem; font-weight:600;">
-                      ${customers
-                        .map(
-                          (c) => `
-                        <option value="${c.id}" ${c.id === selectedCustomer.id ? 'selected' : ''}>
-                          ${escapeHtml(c.name)} (${escapeHtml(c.phone)} • ${escapeHtml(c.vehicleNumber)})
-                        </option>
-                      `
-                        )
-                        .join('')}
-                    </select>
-                  </div>
-                </div>`
-          }
 
           <div class="form-row-2" style="padding-bottom:10px; border-bottom:1px solid var(--color-border-subtle); margin-bottom:10px;">
             <div>
@@ -17177,6 +17154,7 @@ function renderCreateBillPage(container, params = {}) {
                             class="bill-table-input item-desc-input"
                             data-idx="${idx}"
                             placeholder="Service or part name"
+                            enterkeyhint="next"
                             value="${escapeHtml(item.description)}"
                             required
                           />
@@ -17185,6 +17163,7 @@ function renderCreateBillPage(container, params = {}) {
                           <input
                             type="number"
                             class="bill-table-input item-qty-input"
+                            enterkeyhint="next"
                             style="text-align:center;"
                             data-idx="${idx}"
                             min="1"
@@ -17197,6 +17176,7 @@ function renderCreateBillPage(container, params = {}) {
                           <input
                             type="number"
                             class="bill-table-input item-rate-input"
+                            enterkeyhint="next"
                             style="text-align:right;"
                             data-idx="${idx}"
                             min="0"
@@ -17253,6 +17233,7 @@ function renderCreateBillPage(container, params = {}) {
                 <input
                   type="number"
                   id="bill-discount-input"
+                  enterkeyhint="${isEditMode ? 'done' : 'next'}"
                   class="form-input"
                   style="width:76px; padding:3px 6px; font-size:var(--text-xs); text-align:right; font-weight:700;"
                   min="0"
@@ -17301,6 +17282,7 @@ function renderCreateBillPage(container, params = {}) {
                       <input
                         type="number"
                         id="bill-received-input"
+                      enterkeyhint="next"
                         class="form-input with-left-icon"
                         style="font-weight:800;"
                         min="0"
@@ -17505,14 +17487,6 @@ function bindCreateBillEvents(container, params) {
   container.querySelector('#create-bill-back-btn').addEventListener('click', goBack);
   container.querySelector('#cancel-create-bill-btn').addEventListener('click', goBack);
 
-  const addCustBtn = container.querySelector('#bill-add-customer-btn');
-  if (addCustBtn) {
-    addCustBtn.addEventListener('click', () => {
-      syncBillDraftFromDOM(container);
-      Router.navigate('add-customer', { returnTo: 'create-bill' });
-    });
-  }
-
   // Section 16: Clicking Invoice Date inside Bill Details opens interactive Date Picker
   const billDateInput = container.querySelector('#bill-inv-date');
   if (billDateInput) {
@@ -17523,43 +17497,6 @@ function bindCreateBillEvents(container, params) {
         billDateInput.value = meta.formattedShort;
       });
     });
-  }
-
-  const billCustSelect = container.querySelector('#bill-customer-select');
-  if (billCustSelect) {
-  billCustSelect.addEventListener('change', (e) => {
-    syncBillDraftFromDOM(container);
-    const cust = AppState.getCustomerById(e.target.value);
-    billDraft.customerId = cust.id;
-    billDraft.vehicleId = cust.vehicles[0] ? cust.vehicles[0].id : null;
-    billDraft.jobId = cust.currentJobId || '';
-    renderCreateBillPage(container, { ...params, customerId: cust.id, _internalRerender: true });
-  });
-  billCustSelect.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    syncBillDraftFromDOM(container);
-    SelectionPopup.open({
-      title: 'Select Customer',
-      searchable: true,
-      searchPlaceholder: 'Search by name, number or keyword...',
-      selectedValues: [billDraft.customerId],
-      items: AppState.data.customers.map((c) => ({
-        value: c.id,
-        label: c.name,
-        sublabel: `${c.phone} • ${c.vehicleNumber}`,
-        icon: ICONS.users
-      })),
-      onConfirm(chosenId) {
-        if (chosenId) {
-          const cust = AppState.getCustomerById(chosenId);
-          billDraft.customerId = cust.id;
-          billDraft.vehicleId = cust.vehicles[0] ? cust.vehicles[0].id : null;
-          billDraft.jobId = cust.currentJobId || '';
-          renderCreateBillPage(container, { ...params, customerId: cust.id, _internalRerender: true });
-        }
-      }
-    });
-  });
   }
 
   const billMethodSelect = container.querySelector('#bill-method-select');
@@ -17636,6 +17573,37 @@ function bindCreateBillEvents(container, params) {
       }
     });
   });
+
+  // Enter key moves focus to the next editable field in Create Bill / Edit Bill
+  const billFormEl = container.querySelector('#create-bill-page-form');
+  if (billFormEl) {
+    billFormEl.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.keyCode !== 13) return;
+      const target = e.target;
+      if (!target || target.tagName === 'TEXTAREA' || target.tagName === 'BUTTON' || target.type === 'submit') {
+        return;
+      }
+      if (target.tagName === 'INPUT' || target.tagName === 'SELECT') {
+        e.preventDefault();
+        const focusableFields = Array.from(
+          billFormEl.querySelectorAll(
+            'input:not([type="hidden"]):not([disabled]):not([readonly]), select:not([disabled])'
+          )
+        ).filter((el) => {
+          if (el.id === 'bill-inv-date') return false;
+          return el.offsetParent !== null;
+        });
+        const idx = focusableFields.indexOf(target);
+        if (idx >= 0 && idx + 1 < focusableFields.length) {
+          const nextField = focusableFields[idx + 1];
+          nextField.focus();
+          if (nextField.tagName === 'INPUT' && typeof nextField.select === 'function') {
+            try { nextField.select(); } catch (selErr) {}
+          }
+        }
+      }
+    });
+  }
 
   // Submit Generate Bill (Create Mode) or Save Bill Changes (Edit Mode)
   container.querySelector('#create-bill-page-form').addEventListener('submit', (e) => {
@@ -22569,17 +22537,9 @@ function bindSuperadminDashboardEvents(container) {
 }
 
 // ==========================================================================
-// GarageFlow — Superadmin Settings Screen (Reference Image 2)
-// Exactly 4 functional options:
-// 1. WhatsApp Integration
-// 2. Supabase Connectivity Check
-// 3. Notifications
-// 4. Logout
+// GarageFlow — Superadmin Settings Screen
 // ==========================================================================
 function renderSuperadminSettingsPage(container) {
-  const cachedSettings = SuperadminService._platformSettingsCache || {};
-  const waStatus = cachedSettings.whatsapp_api_status || 'Configuration Required';
-
   container.innerHTML = `
     <div class="sa-page-container" id="superadmin-settings-screen">
       <header class="sa-settings-header">
@@ -22596,26 +22556,6 @@ function renderSuperadminSettingsPage(container) {
           <p class="sa-subtitle" style="margin-top:2px;">Manage Superadmin preferences</p>
         </div>
       </header>
-
-      <!-- SECTION 1: INTEGRATION -->
-      <div class="sa-settings-section-label">INTEGRATION</div>
-      <button type="button" class="sa-settings-card-btn" id="sa-settings-whatsapp-btn">
-        <div class="sa-settings-card-left">
-          <span class="sa-settings-icon green">${ICONS.whatsapp}</span>
-          <span class="sa-settings-divider"></span>
-          <div class="sa-settings-text">
-            <div class="sa-settings-title">WhatsApp Integration</div>
-            <div class="sa-settings-desc">Manage GarageFlow's WhatsApp Business API connection.</div>
-          </div>
-        </div>
-        <div class="sa-settings-right">
-          <span class="sa-status-pill config-req" id="sa-wa-status-pill">
-            <span class="sa-status-dot"></span>
-            <span>${escapeHtml(waStatus)}</span>
-          </span>
-          <span class="sa-chevron">${ICONS.chevronRight}</span>
-        </div>
-      </button>
 
       <!-- SECTION 2: SUPABASE / DATABASE CONFIGURATION -->
       <div class="sa-settings-section-label">SUPABASE / DATABASE CONFIGURATION</div>
@@ -22672,9 +22612,7 @@ function renderSuperadminSettingsPage(container) {
     Router.navigate('superadmin-dashboard');
   });
 
-  container.querySelector('#sa-settings-whatsapp-btn').addEventListener('click', () => {
-    Router.navigate('superadmin-whatsapp');
-  });
+
 
   container.querySelector('#sa-settings-connectivity-btn').addEventListener('click', () => {
     Router.navigate('superadmin-connectivity');
@@ -22692,92 +22630,6 @@ function renderSuperadminSettingsPage(container) {
     });
   });
 
-  // Sync latest WhatsApp Meta App status from Supabase if available
-  SuperadminService.fetchPlatformSettings().then((res) => {
-    const pill = container.querySelector('#sa-wa-status-pill');
-    if (res && res.settings && pill && document.body.contains(pill)) {
-      pill.innerHTML = `<span class="sa-status-dot"></span><span>${escapeHtml(res.settings.whatsapp_api_status || 'Configuration Required')}</span>`;
-    }
-  });
-}
-
-// ==========================================================================
-// Superadmin Sub-Screen 1: Platform WhatsApp Business API (Meta App Config)
-// ==========================================================================
-function renderSuperadminWhatsAppPage(container) {
-  const s = SuperadminService._platformSettingsCache || {};
-  container.innerHTML = `
-    <div class="sa-page-container" id="superadmin-whatsapp-screen">
-      <header class="sa-settings-header">
-        <button type="button" class="sa-back-btn" id="sa-wa-back-btn" aria-label="Back to Superadmin Settings">
-          ${ICONS.chevronLeft}
-        </button>
-        <div>
-          <h1 class="sa-title" style="font-size:1.45rem;">WhatsApp Integration</h1>
-          <p class="sa-subtitle" style="margin-top:2px;">Platform Meta WhatsApp Business API configuration</p>
-        </div>
-      </header>
-
-      <section class="sa-card">
-        <div class="sa-status-banner info">
-          <strong>Platform-Level Meta App Configuration:</strong> Configure GarageFlow's shared Meta Developer App settings here. Individual garage owners connect their own WhatsApp Business numbers separately from their Garage Settings.
-        </div>
-
-        <form id="sa-wa-config-form" novalidate>
-          <div class="sa-field-group">
-            <label class="sa-field-label" for="sa-meta-app-id">Meta App ID</label>
-            <input type="text" id="sa-meta-app-id" class="sa-input" style="padding-left:14px;" placeholder="Enter Meta App ID" value="${escapeHtml(s.meta_app_id || '')}" />
-          </div>
-
-          <div class="sa-field-group">
-            <label class="sa-field-label" for="sa-meta-waba-id">WhatsApp Business Account (WABA) ID</label>
-            <input type="text" id="sa-meta-waba-id" class="sa-input" style="padding-left:14px;" placeholder="Enter Platform WABA ID" value="${escapeHtml(s.meta_waba_id || '')}" />
-          </div>
-
-          <div class="sa-field-group">
-            <label class="sa-field-label" for="sa-meta-webhook-url">Webhook Callback URL</label>
-            <input type="url" id="sa-meta-webhook-url" class="sa-input" style="padding-left:14px;" placeholder="https://your-project.supabase.co/functions/v1/whatsapp-webhook" value="${escapeHtml(s.meta_webhook_url || '')}" />
-          </div>
-
-          <p style="font-size:0.76rem; color:#71809E; margin:0 0 14px;">
-            Note: Meta App Secrets and Permanent Access Tokens must be stored exclusively in Supabase Edge Function Secrets — never in browser code.
-          </p>
-
-          <button type="submit" id="sa-wa-save-btn" class="sa-submit-btn">
-            <span>Save Meta App Configuration</span>
-          </button>
-        </form>
-      </section>
-    </div>
-  `;
-
-  container.querySelector('#sa-wa-back-btn').addEventListener('click', () => {
-    Router.navigate('superadmin-settings');
-  });
-
-  container.querySelector('#sa-wa-config-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const metaAppId = container.querySelector('#sa-meta-app-id').value.trim();
-    const metaWabaId = container.querySelector('#sa-meta-waba-id').value.trim();
-    const metaWebhookUrl = container.querySelector('#sa-meta-webhook-url').value.trim();
-    const status = metaAppId && metaWabaId ? 'Connected' : 'Configuration Required';
-
-    const saveBtn = container.querySelector('#sa-wa-save-btn');
-    saveBtn.disabled = true;
-    const res = await SuperadminService.savePlatformSettings({
-      meta_app_id: metaAppId,
-      meta_waba_id: metaWabaId,
-      meta_webhook_url: metaWebhookUrl,
-      whatsapp_api_status: status
-    });
-    saveBtn.disabled = false;
-
-    if (res.ok) {
-      showToast('Platform WhatsApp API configuration saved.', 'success');
-    } else {
-      showToast(res.error || 'Saved locally for this session; run SQL migration to persist in Supabase.', 'warning');
-    }
-  });
 }
 
 // ==========================================================================
@@ -23238,7 +23090,6 @@ function renderOwnerAccountSetupPage(container) {
 Router.register('owner-account-setup', (params) => mountShell(renderOwnerAccountSetupPage, params));
 Router.register('superadmin-dashboard', (params) => mountShell(renderSuperadminDashboardPage, params));
 Router.register('superadmin-settings', (params) => mountShell(renderSuperadminSettingsPage, params));
-Router.register('superadmin-whatsapp', (params) => mountShell(renderSuperadminWhatsAppPage, params));
 Router.register('superadmin-connectivity', (params) => mountShell(renderSuperadminConnectivityPage, params));
 Router.register('superadmin-notifications', (params) => mountShell(renderSuperadminNotificationsPage, params));
 
