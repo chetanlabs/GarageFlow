@@ -10227,18 +10227,7 @@ const AppState = {
   },
 
   logout() {
-    const wasLive = Boolean(this.user && this.user.isSupabaseLive);
-    const activeClient = SuperadminService.getActiveClient();
-    if (activeClient && activeClient.auth && typeof activeClient.auth.signOut === 'function') {
-      activeClient.auth.signOut().catch(() => {});
-    }
-    this.user = null;
-    this.currentRoute = 'login';
-    if (wasLive) {
-      // Wipe in-memory live tenant records so another user on the same device never sees them
-      this.data = loadPersistedData();
-    }
-    this.listeners.forEach((fn) => fn(this));
+    SessionManager.forceTerminateSession('', { isManual: true, clearDrafts: true, broadcast: true });
   },
 
   resetDemoData() {
@@ -10377,6 +10366,7 @@ const AppState = {
       normalizeCustomer(existing);
       this.notify();
       TenantDataService.syncCustomer(existing, true);
+      SessionManager.clearDraftForRoute('add-customer', { customerId: existing.id });
       return { ok: true, customer: existing };
     }
 
@@ -10399,6 +10389,7 @@ const AppState = {
     this.data.customers.unshift(newCustomer);
     this.notify();
     TenantDataService.syncCustomer(newCustomer, false);
+    SessionManager.clearDraftForRoute('add-customer', {});
     return { ok: true, customer: newCustomer };
   },
 
@@ -10529,6 +10520,7 @@ const AppState = {
     this.data.jobs.unshift(newJob);
     this.notify();
     TenantDataService.syncServiceJob(newJob, customer);
+    SessionManager.clearDraftForRoute('new-service', {});
     return { ok: true, job: newJob, customer };
   },
 
@@ -10554,6 +10546,7 @@ const AppState = {
       existing.permissions = ['Home', 'Service Tracking', 'Customer'];
       this.notify();
       TenantDataService.syncStaffMember(existing, true);
+      SessionManager.clearDraftForRoute('add-staff', { staffId: existing.id });
       return existing;
     }
 
@@ -10580,6 +10573,7 @@ const AppState = {
     this.data.staff.unshift(newStaff);
     this.notify();
     TenantDataService.syncStaffMember(newStaff, false);
+    SessionManager.clearDraftForRoute('add-staff', {});
     return newStaff;
   },
 
@@ -10779,6 +10773,7 @@ const AppState = {
     this.data.invoices.unshift(newInvoice);
     this.notify();
     TenantDataService.syncInvoice(newInvoice, customer);
+    SessionManager.clearDraftForRoute('create-bill', {});
     return { ok: true, invoice: newInvoice };
   },
 
@@ -10876,6 +10871,7 @@ const AppState = {
 
     this.notify();
     TenantDataService.syncInvoiceUpdate(invoice);
+    SessionManager.clearDraftForRoute('create-bill', { editInvoiceId: invoice.id });
     return { ok: true, invoice };
   },
 
@@ -10941,6 +10937,7 @@ const AppState = {
     }
     this.notify();
     TenantDataService.syncBusinessProfile(this.data.businessProfile);
+    SessionManager.clearDraftForRoute('business-profile', {});
     return this.data.businessProfile;
   },
 
@@ -10959,6 +10956,7 @@ const AppState = {
     }
     this.notify();
     TenantDataService.syncInvoiceSettings(this.data.invoiceSettings, payload);
+    SessionManager.clearDraftForRoute('invoice-settings', {});
     return this.data.invoiceSettings;
   },
 
@@ -11004,6 +11002,821 @@ const SUPERADMIN_ROUTES = [
   'superadmin-notifications'
 ];
 
+// ==========================================================================
+// GarageFlow — Persistent Session, 12-Hr Inactivity, Demo Policy,
+// Previous-Screen Restoration, Account-Scoped Draft Recovery & Live Revocation
+// ==========================================================================
+const DEMO_NO_PERSIST_EMAILS = Object.freeze(['admin@example.com', 'staff@example.com']);
+const INACTIVITY_TIMEOUT_MS = 12 * 60 * 60 * 1000; // 12 hours
+const ACTIVITY_WRITE_THROTTLE_MS = 15 * 1000;
+const LIVE_STATUS_POLL_MS = 45 * 1000;
+const RECOVERABLE_FORM_ROUTES = Object.freeze([
+  'create-bill',
+  'new-service',
+  'add-customer',
+  'add-staff',
+  'business-profile',
+  'invoice-settings'
+]);
+
+const SessionManager = {
+  _initialized: false,
+  _authListenerBound: false,
+  _activityListenersBound: false,
+  _inactivityTimerId: null,
+  _revocationPollId: null,
+  _realtimeChannel: null,
+  _statusCheckInFlight: false,
+  _lastActivityWriteMs: 0,
+  _inMemoryActivityMs: 0,
+  _isRestoringStartup: false,
+  _activeAccountKey: null,
+  _draftListenerCleanup: null,
+
+  normalizeEmail(email) {
+    return String(email || '').trim().toLowerCase();
+  },
+
+  isDemoAccountEmail(email) {
+    return DEMO_NO_PERSIST_EMAILS.includes(this.normalizeEmail(email));
+  },
+
+  isCurrentUserDemo() {
+    return Boolean(AppState.user && this.isDemoAccountEmail(AppState.user.email));
+  },
+
+  getAccountKey(user) {
+    if (!user) return null;
+    const uid = user.authUserId || '';
+    const email = this.normalizeEmail(user.email || '');
+    const role = user.role || 'user';
+    if (!uid && !email) return null;
+    return `${role}:${uid || email}`;
+  },
+
+  _activityKey(accountKey) {
+    return `gf_last_activity_v1:${accountKey}`;
+  },
+
+  _routeKey(accountKey) {
+    return `gf_last_route_v1:${accountKey}`;
+  },
+
+  _terminatedKey(accountKey) {
+    return `gf_session_terminated_v1:${accountKey}`;
+  },
+
+  _draftPrefix(accountKey) {
+    return `gf_form_draft_v1:${accountKey}:`;
+  },
+
+  _safeReadStorage(key) {
+    try {
+      return window.localStorage ? window.localStorage.getItem(key) : null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  _safeWriteStorage(key, value) {
+    try {
+      if (window.localStorage) window.localStorage.setItem(key, value);
+    } catch (e) {}
+  },
+
+  _safeRemoveStorage(key) {
+    try {
+      if (window.localStorage) window.localStorage.removeItem(key);
+    } catch (e) {}
+  },
+
+  getLastActivityTimestamp(accountKey) {
+    if (!accountKey) return this._inMemoryActivityMs || 0;
+    const raw = this._safeReadStorage(this._activityKey(accountKey));
+    const parsed = raw ? Number(raw) : 0;
+    return Math.max(Number.isFinite(parsed) ? parsed : 0, this._inMemoryActivityMs || 0);
+  },
+
+  recordGenuineActivity(forceWrite = false) {
+    if (!AppState.user) return;
+    const now = Date.now();
+    this._inMemoryActivityMs = now;
+    const key = this.getAccountKey(AppState.user);
+    if (!key) return;
+    if (this.isCurrentUserDemo()) return; // Demo sessions never persist to localStorage
+    if (!forceWrite && now - this._lastActivityWriteMs < ACTIVITY_WRITE_THROTTLE_MS) return;
+    this._lastActivityWriteMs = now;
+    this._safeWriteStorage(this._activityKey(key), String(now));
+  },
+
+  isInactiveExpired(accountKey, nowMs = Date.now()) {
+    const lastTs = this.getLastActivityTimestamp(accountKey);
+    if (!lastTs) return false;
+    return nowMs - lastTs >= INACTIVITY_TIMEOUT_MS;
+  },
+
+  // ---- Previous-Screen Restoration ----
+  saveCurrentRoute(routeName, params = {}) {
+    if (!AppState.user || this.isCurrentUserDemo()) return;
+    if (
+      !routeName ||
+      routeName === 'login' ||
+      routeName === 'staff-account-setup' ||
+      routeName === 'owner-account-setup' ||
+      routeName === 'reset-password'
+    ) {
+      return;
+    }
+    const key = this.getAccountKey(AppState.user);
+    if (!key) return;
+    const safeParams = {};
+    if (params && typeof params === 'object') {
+      ['customerId', 'staffId', 'invoiceId', 'jobId', 'editInvoiceId', 'tab', 'filter', 'mode', 'vehicleId'].forEach((k) => {
+        if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
+          safeParams[k] = params[k];
+        }
+      });
+    }
+    this._safeWriteStorage(
+      this._routeKey(key),
+      JSON.stringify({
+        route: routeName,
+        params: safeParams,
+        role: AppState.user.role,
+        savedAt: Date.now()
+      })
+    );
+  },
+
+  clearSavedRoute(accountKey) {
+    if (!accountKey) return;
+    this._safeRemoveStorage(this._routeKey(accountKey));
+  },
+
+  getValidatedRestorableRoute(user) {
+    const defaultRoute = user && user.role === 'superadmin' ? 'superadmin-dashboard' : 'dashboard';
+    if (!user || this.isDemoAccountEmail(user.email)) {
+      return { route: defaultRoute, params: {} };
+    }
+    const key = this.getAccountKey(user);
+    const raw = key ? this._safeReadStorage(this._routeKey(key)) : null;
+    if (!raw) return { route: defaultRoute, params: {} };
+
+    try {
+      const saved = JSON.parse(raw);
+      if (!saved || !saved.route || typeof saved.route !== 'string') {
+        return { route: defaultRoute, params: {} };
+      }
+      const routeName = saved.route;
+      const params = saved.params && typeof saved.params === 'object' ? saved.params : {};
+
+      if (!Router.routes || !Router.routes[routeName]) {
+        return { route: defaultRoute, params: {} };
+      }
+      if (
+        routeName === 'login' ||
+        routeName === 'staff-account-setup' ||
+        routeName === 'owner-account-setup' ||
+        routeName === 'reset-password'
+      ) {
+        return { route: defaultRoute, params: {} };
+      }
+      if (user.role === 'superadmin') {
+        if (!SUPERADMIN_ROUTES.includes(routeName)) return { route: 'superadmin-dashboard', params: {} };
+      } else if (user.role === 'staff') {
+        if (!STAFF_PERMITTED_ROUTES.includes(routeName)) return { route: 'dashboard', params: {} };
+      } else {
+        if (SUPERADMIN_ROUTES.includes(routeName)) return { route: 'dashboard', params: {} };
+      }
+
+      if (routeName === 'customer-profile' && params.customerId && !AppState.getCustomerById(params.customerId)) {
+        return { route: 'customers', params: {} };
+      }
+      if (routeName === 'staff-profile' && params.staffId && !AppState.getStaffById(params.staffId)) {
+        return { route: 'staff-list', params: {} };
+      }
+      if ((routeName === 'bill-details' || routeName === 'invoice-preview') && params.invoiceId && !AppState.getInvoiceById(params.invoiceId)) {
+        return { route: 'payments', params: {} };
+      }
+
+      return { route: routeName, params };
+    } catch (e) {
+      return { route: defaultRoute, params: {} };
+    }
+  },
+
+  // ---- Account-Scoped & Form-Scoped Draft Recovery ----
+  getFormDraftKey(routeName, params = {}) {
+    if (!AppState.user || this.isCurrentUserDemo()) return null;
+    if (!RECOVERABLE_FORM_ROUTES.includes(routeName)) return null;
+    const accKey = this.getAccountKey(AppState.user);
+    if (!accKey) return null;
+    const entityPart =
+      (params && (params.editInvoiceId || params.invoiceId || params.jobId || params.customerId || params.staffId)) || 'new';
+    return `${this._draftPrefix(accKey)}${routeName}:${entityPart}`;
+  },
+
+  clearDraftForRoute(routeName, params = {}) {
+    if (!AppState.user) return;
+    const accKey = this.getAccountKey(AppState.user);
+    if (!accKey) return;
+    const exactKey = this.getFormDraftKey(routeName, params);
+    if (exactKey) this._safeRemoveStorage(exactKey);
+    try {
+      if (window.localStorage) {
+        const routePrefix = `${this._draftPrefix(accKey)}${routeName}:`;
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+          const k = window.localStorage.key(i);
+          if (k && k.startsWith(routePrefix)) window.localStorage.removeItem(k);
+        }
+      }
+    } catch (e) {}
+  },
+
+  clearAllDraftsForAccount(accountKey) {
+    if (!accountKey) return;
+    try {
+      if (window.localStorage) {
+        const prefix = this._draftPrefix(accountKey);
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+          const k = window.localStorage.key(i);
+          if (k && k.startsWith(prefix)) window.localStorage.removeItem(k);
+        }
+      }
+    } catch (e) {}
+  },
+
+  attachFormDraftRecovery(outletEl, routeName, params = {}) {
+    if (typeof this._draftListenerCleanup === 'function') {
+      this._draftListenerCleanup();
+      this._draftListenerCleanup = null;
+    }
+    if (!outletEl || !AppState.user || this.isCurrentUserDemo()) return;
+    const draftKey = this.getFormDraftKey(routeName, params);
+    if (!draftKey) return;
+
+    const rawDraft = this._safeReadStorage(draftKey);
+    if (rawDraft) {
+      try {
+        const parsed = JSON.parse(rawDraft);
+        const isFresh = parsed && parsed.savedAt && Date.now() - parsed.savedAt < INACTIVITY_TIMEOUT_MS;
+        let serverIsNewer = false;
+        if (parsed && parsed.savedAt && params && params.customerId) {
+          const c = AppState.getCustomerById(params.customerId);
+          if (c && c.updatedAt && new Date(c.updatedAt).getTime() > parsed.savedAt) {
+            serverIsNewer = true;
+          }
+        }
+        if (isFresh && !serverIsNewer && parsed.fields && typeof parsed.fields === 'object') {
+          let restoredCount = 0;
+          Object.entries(parsed.fields).forEach(([fieldId, meta]) => {
+            const escId = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(fieldId) : fieldId;
+            const el = outletEl.querySelector(`#${escId}`);
+            if (!el || el.type === 'password' || el.type === 'file' || el.readOnly || el.disabled) return;
+            if (el.type === 'checkbox' || el.type === 'radio') {
+              if (typeof meta.checked === 'boolean' && el.checked !== meta.checked) {
+                el.checked = meta.checked;
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                restoredCount++;
+              }
+            } else if (typeof meta.value === 'string' && el.value !== meta.value) {
+              el.value = meta.value;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              restoredCount++;
+            }
+          });
+          if (restoredCount > 0) {
+            showToast('Restored your unsaved draft.', 'info');
+          }
+        }
+      } catch (e) {}
+    }
+
+    let saveTimer = null;
+    const persistDraftSnapshot = () => {
+      if (!AppState.user || this.isCurrentUserDemo()) return;
+      const fields = {};
+      const controls = outletEl.querySelectorAll('input[id], select[id], textarea[id]');
+      let hasData = false;
+      controls.forEach((el) => {
+        const type = String(el.type || '').toLowerCase();
+        if (type === 'password' || type === 'file' || type === 'hidden' || type === 'submit' || type === 'button') return;
+        if (el.readOnly || el.disabled) return;
+        if (type === 'checkbox' || type === 'radio') {
+          fields[el.id] = { checked: Boolean(el.checked) };
+          hasData = true;
+        } else {
+          const val = String(el.value || '');
+          if (val !== '') hasData = true;
+          fields[el.id] = { value: val };
+        }
+      });
+      if (hasData) {
+        this._safeWriteStorage(
+          draftKey,
+          JSON.stringify({
+            route: routeName,
+            savedAt: Date.now(),
+            fields
+          })
+        );
+      }
+    };
+
+    const onFormEdit = () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(persistDraftSnapshot, 350);
+    };
+
+    outletEl.addEventListener('input', onFormEdit);
+    outletEl.addEventListener('change', onFormEdit);
+    this._draftListenerCleanup = () => {
+      if (saveTimer) clearTimeout(saveTimer);
+      outletEl.removeEventListener('input', onFormEdit);
+      outletEl.removeEventListener('change', onFormEdit);
+    };
+  },
+
+  // ---- Immediate Revocation & Inactivity Termination ----
+  async forceTerminateSession(reasonMessage, opts = {}) {
+    const accountKey = this._activeAccountKey || this.getAccountKey(AppState.user);
+    const isManual = Boolean(opts.isManual);
+    const broadcast = opts.broadcast !== false;
+
+    this.stopAuthenticatedLifecycle();
+
+    if (accountKey) {
+      this.clearSavedRoute(accountKey);
+      this._safeRemoveStorage(this._activityKey(accountKey));
+      if (opts.clearDrafts !== false) {
+        this.clearAllDraftsForAccount(accountKey);
+      }
+      if (broadcast && !this.isDemoAccountEmail(AppState.user && AppState.user.email)) {
+        this._safeWriteStorage(
+          this._terminatedKey(accountKey),
+          JSON.stringify({ at: Date.now(), reason: reasonMessage || '' })
+        );
+      }
+    }
+
+    const wasLive = Boolean(AppState.user && AppState.user.isSupabaseLive);
+    const activeClient = SuperadminService.getActiveClient();
+    if (activeClient && activeClient.auth && typeof activeClient.auth.signOut === 'function') {
+      try {
+        await activeClient.auth.signOut();
+      } catch (e) {}
+    }
+
+    AppState.user = null;
+    AppState.currentRoute = 'login';
+    this._activeAccountKey = null;
+    this._inMemoryActivityMs = 0;
+    if (wasLive) {
+      AppState.data = loadPersistedData();
+    }
+    if (reasonMessage) {
+      postSetupSuccessMessage = reasonMessage;
+    } else if (isManual) {
+      postSetupSuccessMessage = '';
+    }
+    AppState.listeners.forEach((fn) => fn(AppState));
+    Router.renderCurrent();
+    if (reasonMessage && !isManual) {
+      showToast(reasonMessage, 'warning');
+    }
+  },
+
+  async verifyLiveAccountStatus(source = 'poll') {
+    if (!AppState.user || !AppState.user.isSupabaseLive) return { ok: true };
+    if (this._statusCheckInFlight) return { ok: true, skipped: true };
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return { ok: true, offline: true };
+    }
+
+    const activeClient = SuperadminService.getActiveClient();
+    if (!activeClient || !activeClient.auth) return { ok: true };
+
+    this._statusCheckInFlight = true;
+    try {
+      const accKey = this.getAccountKey(AppState.user);
+      if (this.isInactiveExpired(accKey)) {
+        await this.forceTerminateSession('Your session expired due to inactivity. Please log in again.');
+        return { ok: false, reason: 'inactivity_timeout' };
+      }
+
+      const { data: sessData } = await activeClient.auth.getSession();
+      if (!sessData || !sessData.session || !sessData.session.user) {
+        await this.forceTerminateSession('Your session has expired. Please log in again.');
+        return { ok: false, reason: 'no_session' };
+      }
+
+      let rpcChecked = false;
+      try {
+        const { data: statusData, error: statusErr } = await activeClient.rpc('verify_active_account_status');
+        if (!statusErr && statusData) {
+          rpcChecked = true;
+          const row = Array.isArray(statusData) ? statusData[0] : statusData;
+          if (row && row.is_valid === false) {
+            const msg = row.reason || 'Your account access has been revoked. Please contact your Garage Owner.';
+            await this.forceTerminateSession(msg);
+            return { ok: false, reason: 'backend_revoked' };
+          }
+        }
+      } catch (rpcCatch) {}
+
+      if (!rpcChecked && AppState.user.role === 'staff') {
+        const { data: staffRow, error: staffErr } = await activeClient
+          .from('staff_accounts')
+          .select('id, account_status, approval_status, enable_login')
+          .eq('auth_user_id', sessData.session.user.id)
+          .maybeSingle();
+
+        if (!staffErr && (!staffRow || staffRow.account_status !== 'Active' || staffRow.approval_status !== 'approved' || !staffRow.enable_login)) {
+          await this.forceTerminateSession('Your staff account has been deactivated by the Garage Owner.');
+          return { ok: false, reason: 'staff_deactivated' };
+        }
+      }
+
+      return { ok: true };
+    } catch (err) {
+      return { ok: true, networkError: true };
+    } finally {
+      this._statusCheckInFlight = false;
+    }
+  },
+
+  _subscribeStaffRevocationRealtime(user) {
+    this._unsubscribeRealtime();
+    if (!user || !user.isSupabaseLive || user.role !== 'staff' || !user.staffDbId) return;
+    const client = SuperadminService.getActiveClient();
+    if (!client || typeof client.channel !== 'function') return;
+
+    try {
+      this._realtimeChannel = client
+        .channel(`staff-revocation-${user.staffDbId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'staff_accounts',
+            filter: `id=eq.${user.staffDbId}`
+          },
+          (payload) => {
+            const row = payload && payload.new ? payload.new : null;
+            if (!row || row.account_status !== 'Active' || row.enable_login !== true || row.approval_status !== 'approved') {
+              this.forceTerminateSession('Your staff account has been deactivated by the Garage Owner.');
+            }
+          }
+        )
+        .subscribe();
+    } catch (e) {}
+  },
+
+  _unsubscribeRealtime() {
+    if (this._realtimeChannel) {
+      try {
+        const client = SuperadminService.getActiveClient();
+        if (client && typeof client.removeChannel === 'function') {
+          client.removeChannel(this._realtimeChannel);
+        }
+      } catch (e) {}
+      this._realtimeChannel = null;
+    }
+  },
+
+  _bindGlobalListenersOnce() {
+    if (this._activityListenersBound || typeof window === 'undefined') return;
+    this._activityListenersBound = true;
+
+    const onGenuineUserAction = () => this.recordGenuineActivity(false);
+    ['pointerdown', 'keydown', 'touchstart'].forEach((evt) => {
+      window.addEventListener(evt, onGenuineUserAction, { passive: true });
+    });
+    window.addEventListener('scroll', onGenuineUserAction, { passive: true });
+
+    window.addEventListener('storage', (e) => {
+      if (!AppState.user || !e || !e.key) return;
+      const accKey = this.getAccountKey(AppState.user);
+      if (!accKey) return;
+      if (e.key === this._terminatedKey(accKey) && e.newValue) {
+        let reason = '';
+        try {
+          reason = JSON.parse(e.newValue).reason || '';
+        } catch (err) {}
+        this.forceTerminateSession(reason, { broadcast: false, isManual: !reason });
+      }
+    });
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && AppState.user) {
+          const accKey = this.getAccountKey(AppState.user);
+          if (this.isInactiveExpired(accKey)) {
+            this.forceTerminateSession('Your session expired due to inactivity. Please log in again.');
+            return;
+          }
+          if (AppState.user.isSupabaseLive) {
+            this.verifyLiveAccountStatus('visibility');
+          }
+        }
+      });
+    }
+
+    window.addEventListener('focus', () => {
+      if (!AppState.user) return;
+      const accKey = this.getAccountKey(AppState.user);
+      if (this.isInactiveExpired(accKey)) {
+        this.forceTerminateSession('Your session expired due to inactivity. Please log in again.');
+        return;
+      }
+      if (AppState.user.isSupabaseLive) {
+        this.verifyLiveAccountStatus('focus');
+      }
+    });
+
+    window.addEventListener('online', () => {
+      if (AppState.user && AppState.user.isSupabaseLive) {
+        this.verifyLiveAccountStatus('online');
+      }
+    });
+  },
+
+  _bindAuthStateListenerOnce() {
+    if (this._authListenerBound) return;
+    const client = SuperadminService.getActiveClient();
+    if (!client || !client.auth || typeof client.auth.onAuthStateChange !== 'function') return;
+    this._authListenerBound = true;
+
+    client.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT' && AppState.user && AppState.user.isSupabaseLive && !this._isRestoringStartup) {
+        this.stopAuthenticatedLifecycle();
+        AppState.user = null;
+        AppState.currentRoute = 'login';
+        AppState.data = loadPersistedData();
+        AppState.listeners.forEach((fn) => fn(AppState));
+        Router.renderCurrent();
+      }
+    });
+  },
+
+  startAuthenticatedLifecycle(user) {
+    if (!user) return;
+    this._bindGlobalListenersOnce();
+    this._bindAuthStateListenerOnce();
+    this.stopAuthenticatedLifecycle();
+
+    const accKey = this.getAccountKey(user);
+    this._activeAccountKey = accKey;
+    if (accKey && !this.isDemoAccountEmail(user.email)) {
+      this._safeRemoveStorage(this._terminatedKey(accKey));
+    }
+
+    if (!this.getLastActivityTimestamp(accKey)) {
+      this.recordGenuineActivity(true);
+    } else {
+      this._inMemoryActivityMs = this.getLastActivityTimestamp(accKey);
+    }
+
+    this._inactivityTimerId = setInterval(() => {
+      if (!AppState.user) return;
+      const k = this.getAccountKey(AppState.user);
+      if (this.isInactiveExpired(k)) {
+        this.forceTerminateSession('Your session expired due to inactivity. Please log in again.');
+      }
+    }, 60 * 1000);
+
+    if (user.isSupabaseLive && user.role === 'staff') {
+      this._subscribeStaffRevocationRealtime(user);
+      this._revocationPollId = setInterval(() => {
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+          this.verifyLiveAccountStatus('poll');
+        }
+      }, LIVE_STATUS_POLL_MS);
+    }
+  },
+
+  stopAuthenticatedLifecycle() {
+    if (this._inactivityTimerId) {
+      clearInterval(this._inactivityTimerId);
+      this._inactivityTimerId = null;
+    }
+    if (this._revocationPollId) {
+      clearInterval(this._revocationPollId);
+      this._revocationPollId = null;
+    }
+    this._unsubscribeRealtime();
+    if (typeof this._draftListenerCleanup === 'function') {
+      this._draftListenerCleanup();
+      this._draftListenerCleanup = null;
+    }
+  },
+
+  // ---- Startup Session Restoration (No Login Flash) ----
+  async restoreSessionOnStartup() {
+    this._isRestoringStartup = true;
+    this._bindGlobalListenersOnce();
+    this._bindAuthStateListenerOnce();
+
+    const activeClient = SuperadminService.getActiveClient();
+    if (!activeClient || !activeClient.auth || typeof activeClient.auth.getSession !== 'function') {
+      this._isRestoringStartup = false;
+      return { restored: false };
+    }
+
+    try {
+      const { data: sessionData, error: sessionErr } = await activeClient.auth.getSession();
+      const session = !sessionErr && sessionData ? sessionData.session : null;
+      const authUser = session && session.user ? session.user : null;
+
+      if (!authUser) {
+        this._isRestoringStartup = false;
+        return { restored: false };
+      }
+
+      // PART 4: Special Demo Account Policy — NEVER restore demo sessions on reload/fresh startup
+      if (this.isDemoAccountEmail(authUser.email)) {
+        try {
+          await activeClient.auth.signOut();
+        } catch (e) {}
+        this._isRestoringStartup = false;
+        return { restored: false, reason: 'demo_no_persist' };
+      }
+
+      // Authoritative backend account-status check before restoring protected screens
+      let resolvedRole = null;
+      let rpcChecked = false;
+      let deniedReason = '';
+
+      try {
+        const { data: statusData, error: statusErr } = await activeClient.rpc('verify_active_account_status');
+        if (!statusErr && statusData) {
+          rpcChecked = true;
+          const row = Array.isArray(statusData) ? statusData[0] : statusData;
+          if (row) {
+            if (row.is_valid === true) {
+              resolvedRole = row.role;
+            } else {
+              deniedReason = row.reason || 'Your account session is no longer active. Please log in again.';
+            }
+          }
+        }
+      } catch (e) {}
+
+      if (rpcChecked && !resolvedRole) {
+        try {
+          await activeClient.auth.signOut();
+        } catch (e) {}
+        if (deniedReason) postSetupSuccessMessage = deniedReason;
+        this._isRestoringStartup = false;
+        return { restored: false, reason: 'account_revoked' };
+      }
+
+      // Check 12-hour inactivity before hydrating UI
+      const candidateKeys = [
+        `admin:${authUser.id}`,
+        `staff:${authUser.id}`,
+        `superadmin:${authUser.id}`
+      ];
+      const expiredKey = candidateKeys.find((k) => {
+        const rawTs = this._safeReadStorage(this._activityKey(k));
+        return rawTs && Date.now() - Number(rawTs) >= INACTIVITY_TIMEOUT_MS;
+      });
+      if (expiredKey) {
+        this.clearSavedRoute(expiredKey);
+        this._safeRemoveStorage(this._activityKey(expiredKey));
+        this.clearAllDraftsForAccount(expiredKey);
+        try {
+          await activeClient.auth.signOut();
+        } catch (e) {}
+        postSetupSuccessMessage = 'Your session expired due to inactivity. Please log in again.';
+        this._isRestoringStartup = false;
+        return { restored: false, reason: 'inactivity_timeout' };
+      }
+
+      // 1. Superadmin restore
+      if (!resolvedRole || resolvedRole === 'superadmin') {
+        const saCheck = await SuperadminService.verifyTrustedSuperadminRole(activeClient, authUser);
+        if (saCheck && saCheck.authorized) {
+          AppState.user = {
+            role: 'superadmin',
+            isSupabaseLive: true,
+            authUserId: authUser.id,
+            label: 'Superadmin',
+            name: saCheck.fullName || 'Superadmin',
+            email: saCheck.email || authUser.email,
+            verifiedSource: saCheck.source
+          };
+          this.startAuthenticatedLifecycle(AppState.user);
+          const target = this.getValidatedRestorableRoute(AppState.user);
+          this._isRestoringStartup = false;
+          Router.navigate(target.route, target.params);
+          return { restored: true, role: 'superadmin', route: target.route };
+        }
+      }
+
+      // 2. Garage Owner restore
+      if (!resolvedRole || resolvedRole === 'admin') {
+        let ownerInfo = null;
+        try {
+          const { data: rpcData, error: rpcErr } = await activeClient.rpc('verify_garage_owner_role');
+          if (!rpcErr && rpcData) {
+            const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+            if (row && row.is_owner === true && row.status === 'Active') {
+              ownerInfo = row;
+            }
+          }
+        } catch (e) {}
+
+        if (!ownerInfo) {
+          try {
+            const { data: tblRow } = await activeClient
+              .from('garage_owner_accounts')
+              .select('id, owner_name, garage_name, owner_email, status')
+              .eq('auth_user_id', authUser.id)
+              .maybeSingle();
+            if (tblRow && tblRow.status === 'Active') {
+              ownerInfo = {
+                owner_id: tblRow.id,
+                owner_name: tblRow.owner_name,
+                garage_name: tblRow.garage_name,
+                owner_email: tblRow.owner_email,
+                status: tblRow.status
+              };
+            }
+          } catch (e) {}
+        }
+
+        if (ownerInfo) {
+          const hydrated = await TenantDataService.hydrateForOwner(activeClient, ownerInfo);
+          AppState.data = hydrated.data || TenantDataService.createEmptyTenantData({}, ownerInfo);
+          AppState.user = {
+            role: 'admin',
+            isSupabaseLive: true,
+            garageId: hydrated.garageId || null,
+            authUserId: authUser.id,
+            ownerAccountId: ownerInfo.owner_id || null,
+            label: 'Owner / Admin',
+            name: ownerInfo.owner_name || authUser.email,
+            garageName: ownerInfo.garage_name || AppState.data.businessProfile.garageName,
+            email: ownerInfo.owner_email || authUser.email,
+            permissions: ['Home', 'Service Tracking', 'Customer', 'Payments', 'Settings', 'Staff Management']
+          };
+          this.startAuthenticatedLifecycle(AppState.user);
+          const target = this.getValidatedRestorableRoute(AppState.user);
+          this._isRestoringStartup = false;
+          Router.navigate(target.route, target.params);
+          return { restored: true, role: 'admin', route: target.route };
+        }
+      }
+
+      // 3. Staff restore (enforces active, approved, enable_login=true + un-revoked session)
+      if (!resolvedRole || resolvedRole === 'staff') {
+        const { data: staffRow, error: staffErr } = await activeClient
+          .from('staff_accounts')
+          .select('*')
+          .eq('auth_user_id', authUser.id)
+          .maybeSingle();
+
+        if (!staffErr && staffRow && staffRow.account_status === 'Active' && staffRow.approval_status === 'approved' && staffRow.enable_login) {
+          const hydrated = await TenantDataService.hydrateForStaff(activeClient, staffRow);
+          if (hydrated && hydrated.ok) {
+            AppState.data = hydrated.data;
+            AppState.user = {
+              role: 'staff',
+              isSupabaseLive: true,
+              garageId: staffRow.garage_id,
+              staffId: hydrated.staffCode || staffRow.staff_code || 'STF-101',
+              staffDbId: staffRow.id,
+              authUserId: authUser.id,
+              label: 'Staff',
+              name: staffRow.full_name,
+              email: staffRow.email,
+              phone: staffRow.phone || '',
+              permissions: ['Home', 'Service Tracking', 'Customer']
+            };
+            this.startAuthenticatedLifecycle(AppState.user);
+            const target = this.getValidatedRestorableRoute(AppState.user);
+            this._isRestoringStartup = false;
+            Router.navigate(target.route, target.params);
+            return { restored: true, role: 'staff', route: target.route };
+          }
+        }
+      }
+
+      try {
+        await activeClient.auth.signOut();
+      } catch (e) {}
+      this._isRestoringStartup = false;
+      return { restored: false, reason: 'invalid_role' };
+    } catch (err) {
+      this._isRestoringStartup = false;
+      return { restored: false, reason: 'restore_error' };
+    }
+  }
+};
+
 const Router = {
   register(routeName, renderFn) {
     routes[routeName] = renderFn;
@@ -11046,6 +11859,12 @@ const Router = {
         ...AppState.routeParams,
         ...params
       };
+      if (AppState.user) {
+        SessionManager.saveCurrentRoute(routeName, AppState.routeParams);
+        if (!SessionManager._isRestoringStartup) {
+          SessionManager.recordGenuineActivity(false);
+        }
+      }
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -13201,6 +14020,11 @@ function bindLoginEvents(container) {
     if (typeof viewportCleanup === 'function') {
       viewportCleanup();
       viewportCleanup = null;
+    }
+
+    if (AppState.user) {
+      SessionManager.startAuthenticatedLifecycle(AppState.user);
+      SessionManager.recordGenuineActivity(true);
     }
 
     if (AppState.user && AppState.user.role === 'superadmin') {
@@ -23003,6 +23827,7 @@ function mountShell(pageRenderFn, params) {
 
   const outlet = document.getElementById('screen-outlet');
   pageRenderFn(outlet, params);
+  SessionManager.attachFormDraftRecovery(outlet, AppState.currentRoute, params || AppState.routeParams || {});
 }
 
 // Register all application routes
@@ -23582,7 +24407,7 @@ document.addEventListener('click', (e) => {
 });
 
 // Initialize Application immediately or on DOMContentLoaded
-function detectAndRouteInvitationLinkOnStartup() {
+async function detectAndRouteInvitationLinkOnStartup() {
   if (typeof window === 'undefined') {
     Router.renderCurrent();
     return;
@@ -23627,7 +24452,24 @@ function detectAndRouteInvitationLinkOnStartup() {
     });
     return;
   }
-  Router.renderCurrent();
+
+  // Render lightweight restoring screen (prevents login-screen flash while checking Supabase session)
+  if (appRoot) {
+    appRoot.className = 'app-shell auth-layout';
+    appRoot.innerHTML = `
+      <main id="screen-outlet" style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;">
+        <div style="text-align:center;color:#102653;font-family:inherit;">
+          <div style="font-size:26px;font-weight:800;font-style:italic;letter-spacing:-0.5px;margin-bottom:8px;">Garage<span style="color:#1769EE;">Flow</span></div>
+          <div style="font-size:13px;color:#5D6E8C;font-weight:600;">Restoring your workspace...</div>
+        </div>
+      </main>
+    `;
+  }
+
+  const restoreRes = await SessionManager.restoreSessionOnStartup();
+  if (!restoreRes || !restoreRes.restored) {
+    Router.renderCurrent();
+  }
 }
 
 window.GarageFlow = {
@@ -23654,7 +24496,8 @@ Object.assign(window.GarageFlow, {
   supabaseClient,
   verifySupabaseConnection,
   SuperadminService,
-  TenantDataService
+  TenantDataService,
+  SessionManager
 });
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => detectAndRouteInvitationLinkOnStartup());
